@@ -1,13 +1,15 @@
 #!/bin/bash
-# QuotaDock 构建/安装脚本
-#   ./build.sh            仅编译
+# QuotaDock 构建/安装脚本（SwiftPM）
+#   ./build.sh            编译 release 并组装 app bundle
 #   ./build.sh --install  编译 + 安装 launchd 开机自启（local.quotadock）
 set -e
 cd "$(dirname "$0")"
 
+swift build -c release
+
 APP=QuotaDock.app
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -swift-version 5 -o "$APP/Contents/MacOS/QuotaDock" main.swift
+cp .build/release/QuotaDock "$APP/Contents/MacOS/QuotaDock"
 rm -rf "$APP/Contents/Resources/logos"
 cp -R logos "$APP/Contents/Resources/logos"
 echo "built $APP"

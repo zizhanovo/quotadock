@@ -4,3 +4,4 @@ QuotaDock.app
 HANDOFF.md
 .DS_Store
 *.log
+.build/
