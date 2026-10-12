@@ -3,80 +3,36 @@ import QuotaDockCore
 
 // MARK: - 形态切换：吸边条（默认/静止态）↔ 仪表盘（展开态）
 //
-// 交互模型（v2.1）：
-// - 默认收纳为吸边条；悬停 0.35s 展开为临时预览（防误触驻留）
-// - 鼠标离开面板 2.5s 后自动收纳回原边原位
-// - 点击吸边条 / 拖动面板 / 打开设置 = 固定展开（不自动收）；"收起"按钮手动收
-// - 展开面板锚定在吸边条原位（不飞回默认角），收纳回到最近的边
+// 交互模型（v2.1.1）：收纳/展开状态只有 store.stripMode 一份。
+// - 默认收纳为吸边条；悬停 0.35s 展开或点击展开
+// - 鼠标离开 2.5s 一律自动收纳回原边（例外：设置窗口开着、拖动中）
+// - 头部 ⌄ 随时手动收；展开面板锚定吸边条原位，收纳回到最近的边
 
 struct PanelRootView: View {
     @ObservedObject var store: Store
-    @State private var collapsed: Bool
     var onOpenSettings: (() -> Void)? = nil
-    @State private var autoCollapseTask: Task<Void, Never>?
 
-    init(store: Store, initiallyCollapsed: Bool = true, onOpenSettings: (() -> Void)? = nil) {
+    init(store: Store, onOpenSettings: (() -> Void)? = nil) {
         self.store = store
-        _collapsed = State(initialValue: initiallyCollapsed)
         self.onOpenSettings = onOpenSettings
     }
 
     var body: some View {
-        if collapsed {
+        if store.stripMode {
             EdgeStrip(store: store,
-                      onTap: { expand(pinned: true) },
+                      onTap: { store.expandFromStrip() },
                       onHoverDwell: {
-                          guard !store.userDragging else { return }
-                          expand(pinned: false)
+                          // 刚自动收纳完的原地驻留不秒重开（防抖动）
+                          guard !store.userDragging,
+                                Date().timeIntervalSince(store.lastAutoCollapseAt ?? .distantPast) > 0.8
+                          else { return }
+                          store.expandFromStrip()
                       })
         } else {
             MiniDashboardView(store: store,
-                              onCollapse: collapse,
+                              onCollapse: { store.collapseToStrip() },
                               onOpenSettings: onOpenSettings,
-                              onHoverChange: { hovering in
-                                  if hovering {
-                                      autoCollapseTask?.cancel()
-                                  } else {
-                                      scheduleAutoCollapse()
-                                  }
-                              })
-        }
-    }
-
-    // MARK: 展开/收纳
-
-    private func expand(pinned: Bool) {
-        // 先记录吸边条锚点（窗口此刻还是条的几何），展开后面板贴着它出现
-        if let w = NSApp.windows.first(where: { $0 is NSPanel }) {
-            store.pendingExpandAnchor = (store.stripEdge,
-                                         NSPoint(x: w.frame.midX, y: w.frame.midY))
-        }
-        withAnimation(.easeOut(duration: 0.15)) {
-            store.pinnedOpen = pinned
-            collapsed = false
-            store.stripMode = false
-        }
-    }
-
-    private func collapse() {
-        withAnimation(.easeOut(duration: 0.15)) {
-            collapsed = true
-            store.pinnedOpen = false
-            store.stripMode = true
-            let e = nearestDockEdgeFromPanel()
-            store.stripEdge = e
-            UserDefaults.standard.set(e.rawValue, forKey: "stripEdge")
-        }
-    }
-
-    /// 离开面板 2.5s 后自动收纳（固定展开则跳过）；期间重新悬停会取消
-    private func scheduleAutoCollapse() {
-        autoCollapseTask?.cancel()
-        guard !store.pinnedOpen else { return }
-        autoCollapseTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            guard !Task.isCancelled, !store.pinnedOpen, !collapsed else { return }
-            collapse()
+                              onHoverChange: { store.noteHover($0) })
         }
     }
 }

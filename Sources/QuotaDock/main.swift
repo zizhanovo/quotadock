@@ -41,7 +41,7 @@ private func renderSnapshotAndExit() {
         try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["QUOTADOCK_OUT"] ?? "/tmp/quotadock-settings.png"))
         exit(0)
     }
-    let root = AnyView(PanelRootView(store: store, initiallyCollapsed: ProcessInfo.processInfo.environment["QUOTADOCK_STRIP"] == "1"))
+    let root = AnyView(PanelRootView(store: store))
     let host = NSHostingView(rootView: root)
     host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     // 先用任意高度布局一次，等 SwiftUI 完成布局后再量真实尺寸

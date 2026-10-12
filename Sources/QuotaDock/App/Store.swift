@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import Combine
 import QuotaDockCore
 
@@ -64,10 +65,54 @@ final class Store: ObservableObject {
     @Published var stripMode = false                 // 收起态=吸边细条
     @Published var stripEdge: DockEdge
 
-    // 悬停展开/自动收纳的交互状态（详见 PanelRootView）
-    @Published var pinnedOpen = false                // 点击展开/拖动/开设置 → 固定展开，不自动收
-    var userDragging = false                         // 拖动进行中（抑制悬停展开，仅主线程写）
+    // 悬停展开/自动收纳的交互状态（唯一事实来源；详见 PanelRootView）
+    @Published var settingsOpen = false              // 设置窗口开着时不自动收纳（配置中面板不能消失）
+    var userDragging = false                         // 拖动进行中（抑制悬停展开判定，仅主线程写）
+    var isHovered = false                            // 鼠标当前是否在面板上
     var pendingExpandAnchor: (edge: DockEdge, point: NSPoint)?  // 展开时面板锚定吸边条原位
+    private(set) var lastAutoCollapseAt: Date?       // 防收纳后原地秒重开的抖动
+    private var autoCollapseTask: Task<Void, Never>?
+
+    /// 从吸边条展开：记录锚点（此刻窗口还是条的几何），面板贴着它出现
+    func expandFromStrip() {
+        if let w = NSApp.windows.first(where: { $0 is NSPanel }) {
+            pendingExpandAnchor = (stripEdge, NSPoint(x: w.frame.midX, y: w.frame.midY))
+        }
+        withAnimation(.easeOut(duration: 0.15)) { stripMode = false }
+    }
+
+    /// 收纳回最近的边（手动 ⌄ / 自动离开超时共用）
+    func collapseToStrip() {
+        withAnimation(.easeOut(duration: 0.15)) {
+            stripMode = true
+            let e = nearestDockEdgeFromPanel()
+            stripEdge = e
+            UserDefaults.standard.set(e.rawValue, forKey: "stripEdge")
+        }
+        lastAutoCollapseAt = Date()
+    }
+
+    /// 悬停状态变化：进入取消收纳倒计时，离开重新起表
+    func noteHover(_ hovering: Bool) {
+        isHovered = hovering
+        if hovering {
+            autoCollapseTask?.cancel()
+        } else {
+            scheduleAutoCollapse()
+        }
+    }
+
+    /// 离开 2.5s 后收纳。例外：设置窗口开着、正在拖动、鼠标又回来了。
+    func scheduleAutoCollapse() {
+        autoCollapseTask?.cancel()
+        guard !stripMode else { return }
+        autoCollapseTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, !stripMode,
+                  !isHovered, !settingsOpen, !userDragging else { return }
+            collapseToStrip()
+        }
+    }
 
     init(sources: [QuotaSource]? = nil,
          config: ConfigurationStore = .shared,

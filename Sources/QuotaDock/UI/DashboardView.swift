@@ -32,10 +32,7 @@ struct MiniDashboardView: View {
                     .accessibilityLabel(L("收起为吸边条", "Collapse to edge strip"))
                 }
                 if let onOpenSettings {
-                    Button {
-                        store.pinnedOpen = true   // 开设置=要持续交互，固定展开防自动收纳
-                        onOpenSettings()
-                    } label: {
+                    Button { onOpenSettings() } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: DT.Size.value, weight: .medium))
                             .frame(minWidth: DT.minHitSize - 6, minHeight: DT.minHitSize - 6)

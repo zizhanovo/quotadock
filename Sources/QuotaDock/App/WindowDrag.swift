@@ -18,11 +18,8 @@ struct WindowDragModifier: ViewModifier {
                 .onChanged { _ in
                     guard let w = NSApp.windows.first(where: { $0 is NSPanel }) else { return }
                     if startOrigin == nil {
-                        // 拖动=主动交互：抑制悬停展开判定，展开态拖动则固定展开
-                        if let del = NSApp.delegate as? AppDelegate {
-                            del.store.userDragging = true
-                            if !del.store.stripMode { del.store.pinnedOpen = true }
-                        }
+                        // 拖动=主动交互：抑制悬停展开/自动收纳判定
+                        (NSApp.delegate as? AppDelegate)?.store.userDragging = true
                         startOrigin = w.frame.origin
                         cursorOffset = NSPoint(x: NSEvent.mouseLocation.x - startOrigin!.x,
                                                y: NSEvent.mouseLocation.y - startOrigin!.y)

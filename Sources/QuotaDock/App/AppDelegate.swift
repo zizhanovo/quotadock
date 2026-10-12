@@ -21,7 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         store.stripMode = true   // 默认收纳态（render 模式不走到这里）
         host = NSHostingController(rootView: PanelRootView(store: store,
-                                                           initiallyCollapsed: true,
                                                            onOpenSettings: { [weak self] in
                                                                self?.openSettings()
                                                            }))
@@ -205,9 +204,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
             w.center()
+            // 设置窗口期间面板不自动收纳（配置时面板必须可见）；关掉后重新起收纳倒计时
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.store.settingsOpen = false
+                    self.store.scheduleAutoCollapse()
+                }
+            }
             settingsWindow = w
             w.makeKeyAndOrderFront(nil)
         }
+        store.settingsOpen = true
+        store.noteHover(false)   // 焦点转去设置窗口：按"离开"处理，但 settingsOpen 挡住收纳
         NSApp.activate(ignoringOtherApps: true)
     }
 }
