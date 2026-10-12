@@ -35,6 +35,8 @@ struct SettingsView: View {
             }
             HStack {
                 Button(L("打开配置文件…", "Open config file…")) { model.openConfigFile() }
+                Button(L("退出 QuotaDock", "Quit QuotaDock")) { NSApp.terminate(nil) }
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button(L("还原表单", "Revert")) { model.reload() }
                 Button(L("保存并生效", "Save & apply")) { model.save() }
