@@ -9,11 +9,12 @@ struct MiniDashboardView: View {
     @ObservedObject var store: Store
     var onCollapse: (() -> Void)? = nil
     var onOpenSettings: (() -> Void)? = nil
+    var onOpenDashboard: (() -> Void)? = nil
     var onHoverChange: ((Bool) -> Void)? = nil   // 悬停状态回调（自动收纳调度用）
 
     var body: some View {
         VStack(alignment: .leading, spacing: DT.rowSpacing) {
-            // 头部：本地时间 + 收起 + 设置 + 手动刷新
+            // 头部：本地时间 + 收起 + 大屏仪表盘 + 设置 + 手动刷新
             HStack {
                 TimelineView(.periodic(from: .now, by: 30)) { ctx in
                     Text(Fmt.dateWeekHM.string(from: ctx.date))
@@ -30,6 +31,17 @@ struct MiniDashboardView: View {
                     .buttonStyle(.borderless)
                     .help(L("收起为吸边条", "Collapse to edge strip"))
                     .accessibilityLabel(L("收起为吸边条", "Collapse to edge strip"))
+                }
+                if let onOpenDashboard {
+                    Button { onOpenDashboard() } label: {
+                        Image(systemName: "chart.xyaxis.line")
+                            .font(.system(size: DT.Size.value, weight: .medium))
+                            .frame(minWidth: DT.minHitSize - 6, minHeight: DT.minHitSize - 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L("打开大屏仪表盘（趋势/重置时间轴）", "Open dashboard (trends / reset timeline)"))
+                    .accessibilityLabel(L("打开大屏仪表盘", "Open dashboard"))
                 }
                 if let onOpenSettings {
                     Button { onOpenSettings() } label: {

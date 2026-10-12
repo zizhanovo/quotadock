@@ -46,6 +46,7 @@ struct SourceLine: Identifiable {
 final class Store: ObservableObject {
     let coordinator: RefreshCoordinator
     let configStore: ConfigurationStore
+    let historyStore: HistoryStore
     private var cancellables: Set<AnyCancellable> = []
     private var refreshTimer: Timer?
 
@@ -117,7 +118,8 @@ final class Store: ObservableObject {
     init(sources: [QuotaSource]? = nil,
          config: ConfigurationStore = .shared,
          cache: CacheStore = CacheStore(),
-         skipList: SkipListStore = .shared) {
+         skipList: SkipListStore = .shared,
+         history: HistoryStore = HistoryStore()) {
         selectedTails = UserDefaults.standard.array(forKey: "displayKeys") as? [String]
         autoOnly = UserDefaults.standard.bool(forKey: "autoOnly")
         showRemaining = UserDefaults.standard.bool(forKey: "showRemaining")
@@ -128,9 +130,11 @@ final class Store: ObservableObject {
                                  MiMoSource(), ClaudeCodeSource()],
             configProvider: { config.currentSnapshot() },
             cache: cache,
+            history: history,
             skipList: skipList
         )
         configStore = config
+        historyStore = history
         coordinator.seedFromCache()
         rebuildRows(from: coordinator.outcomes)
 

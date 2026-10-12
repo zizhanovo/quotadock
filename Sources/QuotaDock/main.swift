@@ -8,7 +8,15 @@ import QuotaDockCore
 @MainActor
 private func renderSnapshotAndExit() {
     _ = NSApplication.shared
-    let store = Store()
+    // 渲染模式全部落临时目录：不读/不写用户的真实缓存与历史
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("qd-render-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    let store = Store(config: .shared,
+                      cache: CacheStore(url: tmp.appendingPathComponent("cache.json")),
+                      skipList: SkipListStore(url: tmp.appendingPathComponent("skip.json"),
+                                              legacyURL: tmp.appendingPathComponent("skip.txt")),
+                      history: HistoryStore(url: tmp.appendingPathComponent("history.json")))
     if ProcessInfo.processInfo.environment["QUOTADOCK_STATE"] != "empty" {
         seedRenderFixtures(store)
     } else {
@@ -21,6 +29,29 @@ private func renderSnapshotAndExit() {
         if let e = ProcessInfo.processInfo.environment["QUOTADOCK_EDGE"], let edge = DockEdge(rawValue: e) { store.stripEdge = edge }
     }
     let dark = ProcessInfo.processInfo.environment["QUOTADOCK_DARK"] == "1"
+    if ProcessInfo.processInfo.environment["QUOTADOCK_DASHBOARD"] == "1" {
+        // 大屏仪表盘离屏渲染：合成 7 天历史 + 现势 outcomes
+        seedRenderFixtures(store)
+        seedRenderHistory(store)
+        let host = NSHostingView(rootView: AnyView(DashboardWindowView(store: store)))
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host.frame = NSRect(origin: .zero, size: NSSize(width: 760, height: 620))
+        host.layoutSubtreeIfNeeded()
+        let size = host.fittingSize
+        host.frame = NSRect(origin: .zero, size: NSSize(width: 760, height: max(620, size.height)))
+        host.layoutSubtreeIfNeeded()
+        let scale: CGFloat = 2
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width * scale), pixelsHigh: Int(host.bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = host.bounds.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        (dark ? NSColor(red: 0.13, green: 0.13, blue: 0.15, alpha: 1) : NSColor.white).setFill()
+        NSBezierPath(rect: host.bounds).fill()
+        host.displayIgnoringOpacity(host.bounds, in: NSGraphicsContext.current!)
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["QUOTADOCK_OUT"] ?? "/tmp/quotadock-dashboard.png"))
+        exit(0)
+    }
     if ProcessInfo.processInfo.environment["QUOTADOCK_SETTINGS"] == "1" {
         let host = NSHostingView(rootView: AnyView(SettingsView(store: store)))
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -99,6 +130,29 @@ private func seedRenderFixtures(_ store: Store) {
                      statusHint: L("token 过期 · 跑一次 kimi CLI 自动续期", "token expired · run kimi CLI to refresh")),
     ]
     store.lastUpdate = Date().addingTimeInterval(-120)
+}
+
+@MainActor
+private func seedRenderHistory(_ store: Store) {
+    // 大屏仪表盘渲染用：为每个身份合成 7 天、每 30 分钟一个点的锯齿状历史
+    let now = Date().timeIntervalSince1970
+    for (id, src, name, base) in [("zp:provider:bigmodel-api-2#J7Fk", "zhipu", "月卡2", 55.0),
+                                  ("codex:default", "codex", "Codex Pro", 42.0),
+                                  ("mimo:default", "mimo", "MiMo", 60.0),
+                                  ("cc:racknerd", "claudeCode", "CC racknerd", 65.0)] {
+        var points: [HistoryPoint] = []
+        var t = now - 7 * 86400
+        var i = 0
+        while t < now {
+            let wave = sin(Double(i) / 28 * .pi)                    // 日内爬升-重置锯齿
+            let drift = (now - t) / (7 * 86400) * 18                // 周内趋势抬升
+            let u = Int(min(100, max(2, base - 20 + wave * 30 + drift)))
+            points.append(HistoryPoint(t: t, u: u, f: u, w: Int(min(100, base - 10 + drift))))
+            t += 1800
+            i += 1
+        }
+        for p in points { store.historyStore.append(identityKey: id, source: SourceID(rawValue: src)!, displayName: name, point: p) }
+    }
 }
 
 @MainActor

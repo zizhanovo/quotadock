@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host = NSHostingController(rootView: PanelRootView(store: store,
                                                            onOpenSettings: { [weak self] in
                                                                self?.openSettings()
+                                                           },
+                                                           onOpenDashboard: { [weak self] in
+                                                               self?.openDashboard()
                                                            }))
         host.sizingOptions = .preferredContentSize
         panel = NSPanel(contentViewController: host)
@@ -188,6 +191,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            y: screen.visibleFrame.maxY - f.height - 8)
         panel.setFrame(f, display: true)
         Log.info("panel=\(NSStringFromRect(panel.frame)) screen.visible=\(NSStringFromRect(screen.visibleFrame))")
+    }
+
+    // MARK: 大屏仪表盘窗口（单实例；面板图表按钮打开）
+
+    private var dashboardWindow: NSWindow?
+
+    func openDashboard() {
+        if let w = dashboardWindow {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            let host = NSHostingController(rootView: DashboardWindowView(store: store))
+            let w = NSWindow(contentViewController: host)
+            w.title = "QuotaDock " + L("仪表盘", "Dashboard")
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            w.setContentSize(NSSize(width: 760, height: 620))
+            w.isReleasedWhenClosed = false
+            w.center()
+            dashboardWindow = w
+            w.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: 设置窗口（单实例；面板齿轮按钮打开）

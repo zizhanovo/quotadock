@@ -19,6 +19,7 @@ public final class RefreshCoordinator: ObservableObject {
     private let sources: [QuotaSource]
     private let configProvider: () -> AppConfiguration
     private let cache: CacheStore
+    private let history: HistoryStore?
     private let skipList: SkipListStore
     private let now: () -> Date
 
@@ -29,11 +30,13 @@ public final class RefreshCoordinator: ObservableObject {
     public init(sources: [QuotaSource],
                 configProvider: @escaping () -> AppConfiguration,
                 cache: CacheStore = CacheStore(),
+                history: HistoryStore? = HistoryStore(),
                 skipList: SkipListStore = SkipListStore.shared,
                 now: @escaping () -> Date = Date.init) {
         self.sources = sources
         self.configProvider = configProvider
         self.cache = cache
+        self.history = history
         self.skipList = skipList
         self.now = now
     }
@@ -154,6 +157,18 @@ public final class RefreshCoordinator: ObservableObject {
                     expiresAt: result.observedAt.addingTimeInterval(FreshnessPolicy.staleAfter)
                 ))
                 if wasSkipped { skipList.remove(result.identity) }   // 重探成功 → 自动恢复
+                // 趋势采样：成功一轮记一个点（大屏仪表盘的数据面）
+                history?.append(
+                    identityKey: key,
+                    source: result.identity.source,
+                    displayName: outcome.displayName,
+                    point: HistoryPoint(
+                        t: result.observedAt.timeIntervalSince1970,
+                        u: snapshot.primaryUsedPercent,
+                        f: snapshot.fiveHour?.percentage,
+                        w: snapshot.weekly?.percentage
+                    )
+                )
             } else {
                 outcome.status = .invalidPayload(diagnostic: "empty snapshot")
             }

@@ -11,10 +11,13 @@ import QuotaDockCore
 struct PanelRootView: View {
     @ObservedObject var store: Store
     var onOpenSettings: (() -> Void)? = nil
+    var onOpenDashboard: (() -> Void)? = nil
 
-    init(store: Store, onOpenSettings: (() -> Void)? = nil) {
+    init(store: Store, onOpenSettings: (() -> Void)? = nil,
+         onOpenDashboard: (() -> Void)? = nil) {
         self.store = store
         self.onOpenSettings = onOpenSettings
+        self.onOpenDashboard = onOpenDashboard
     }
 
     var body: some View {
@@ -32,6 +35,7 @@ struct PanelRootView: View {
             MiniDashboardView(store: store,
                               onCollapse: { store.collapseToStrip() },
                               onOpenSettings: onOpenSettings,
+                              onOpenDashboard: onOpenDashboard,
                               onHoverChange: { store.noteHover($0) })
         }
     }
