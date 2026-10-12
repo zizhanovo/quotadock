@@ -8,7 +8,8 @@
 
 - 面板顶部是**摘要卡**：当前最紧张的服务 + 大号百分比 + 最近重置倒计时 + 数据时间
 - 下面是服务列表：智谱各 key 的 5h/周双进度条、Codex/Kimi/MiMo/Claude Code 用量行，全部按紧张度降序
-- 悬停面板底部弹出设置：各来源连接状态 → 显示偏好 → 刷新/收起/退出
+- 悬停面板底部弹出快捷条：各来源连接状态 → 显示偏好 → 刷新/收起/退出
+- 点面板头部的**齿轮按钮**打开设置窗口：连接来源（路径/开关/服务器/手工 key）→ 验证（配置校验 + 单源立即抓取）→ 显示偏好，保存即写回 config.json 并热生效（保留你手写的未知字段）
 - 收起 = **吸边细条**：靠哪条屏边近就吸哪条，左右竖条、上下横条，彩色百分比 + 品牌 logo；点击恢复、拖到别的边换向
 - 临时故障（断网/限流/服务端 5xx）**保留最近成功值**并标注数据时间，绝不清空；只有服务端明确拒绝凭据才标记失效
 
@@ -55,6 +56,8 @@ rm -rf <clone 目录>
 ## 配置
 
 配置文件：`~/.config/quotadock/config.json`（不存在则全部用内置默认值；模板见 [`config.example.json`](config.example.json)，路径可用 `QUOTADOCK_CONFIG` 环境变量覆盖）。
+
+改配置有两条路：**面板齿轮按钮打开设置窗口**（表单编辑，保存即生效），或直接手编 JSON。两条路互通——设置窗口保存时深度合并进现有文件，不碰你手写的未知字段。
 
 **热加载**：改动后每 5 秒内自动生效（下一个刷新边界应用，不用重启）。非法字段自动回退默认值并在日志里给出修复提示；整个文件写坏时保留上一份有效配置。
 
@@ -121,6 +124,7 @@ QUOTADOCK_RENDER=1 QUOTADOCK_LOGOS=$PWD/logos .build/debug/QuotaDock
 QUOTADOCK_RENDER=1 QUOTADOCK_DARK=1 QUOTADOCK_LOGOS=$PWD/logos QUOTADOCK_OUT=/tmp/d.png .build/debug/QuotaDock
 QUOTADOCK_RENDER=1 QUOTADOCK_STATE=empty QUOTADOCK_LOGOS=$PWD/logos QUOTADOCK_OUT=/tmp/e.png .build/debug/QuotaDock
 QUOTADOCK_RENDER=1 QUOTADOCK_STRIP=1 QUOTADOCK_EDGE=top QUOTADOCK_LOGOS=$PWD/logos QUOTADOCK_OUT=/tmp/s.png .build/debug/QuotaDock
+QUOTADOCK_RENDER=1 QUOTADOCK_SETTINGS=1 QUOTADOCK_LOGOS=$PWD/logos QUOTADOCK_OUT=/tmp/settings.png .build/debug/QuotaDock
 ```
 
 架构、数据流、数据源契约和**新增数据源步骤**见 [docs/architecture.md](docs/architecture.md)；v2 设计规格见 `docs/superpowers/specs/`。运行日志：`/tmp/quotadock.out.log`。

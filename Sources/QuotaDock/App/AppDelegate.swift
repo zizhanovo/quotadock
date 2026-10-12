@@ -15,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     init(store: Store) { self.store = store }
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        let host = NSHostingController(rootView: PanelRootView(store: store))
+        let host = NSHostingController(rootView: PanelRootView(store: store, onOpenSettings: { [weak self] in
+            self?.openSettings()
+        }))
         host.sizingOptions = .preferredContentSize
         panel = NSPanel(contentViewController: host)
         panel.styleMask = [.borderless, .nonactivatingPanel]
@@ -84,6 +86,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         store.start()
+    }
+
+    // MARK: 设置窗口（单实例；面板齿轮按钮打开）
+
+    private var settingsWindow: NSWindow?
+
+    func openSettings() {
+        if let w = settingsWindow {
+            w.makeKeyAndOrderFront(nil)
+        } else {
+            let host = NSHostingController(rootView: SettingsView(store: store))
+            let w = NSWindow(contentViewController: host)
+            w.title = "QuotaDock " + L("设置", "Settings")
+            w.styleMask = [.titled, .closable, .miniaturizable]
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+            w.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 窗口任意一边超出可见区时拉回来（展开/收起后调用）；吸边条模式改为贴齐当前边

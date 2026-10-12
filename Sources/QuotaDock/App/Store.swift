@@ -40,6 +40,7 @@ struct SourceLine: Identifiable {
 @MainActor
 final class Store: ObservableObject {
     let coordinator: RefreshCoordinator
+    let configStore: ConfigurationStore
     private var cancellables: Set<AnyCancellable> = []
     private var refreshTimer: Timer?
 
@@ -75,6 +76,7 @@ final class Store: ObservableObject {
             cache: cache,
             skipList: skipList
         )
+        configStore = config
         coordinator.seedFromCache()
         rebuildRows(from: coordinator.outcomes)
 
@@ -278,6 +280,15 @@ final class Store: ObservableObject {
             coordinator.refreshAll()
         }
     }
+
+    /// 设置页"验证"：只强制刷新一个数据源
+    func refreshSource(_ id: SourceID) {
+        coordinator.refresh(sourceIDs: [id], force: true)
+    }
+
+    /// 配置校验结果（字段级 + 整文件级），设置页"验证"段直接展示
+    var configFieldIssues: [ConfigIssue] { configStore.currentSnapshot().issues }
+    var configFileIssues: [ConfigIssue] { configStore.fileIssues }
 
     // MARK: 显示偏好（v1 行为保持）
 

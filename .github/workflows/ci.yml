@@ -37,7 +37,8 @@ jobs:
           QUOTADOCK_RENDER=1 QUOTADOCK_DARK=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-dark.png .build/debug/QuotaDock
           QUOTADOCK_RENDER=1 QUOTADOCK_STATE=empty QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-empty.png .build/debug/QuotaDock
           QUOTADOCK_RENDER=1 QUOTADOCK_STRIP=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-strip.png .build/debug/QuotaDock
-          for f in render-light render-dark render-empty render-strip; do
+          QUOTADOCK_RENDER=1 QUOTADOCK_SETTINGS=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-settings.png .build/debug/QuotaDock
+          for f in render-light render-dark render-empty render-strip render-settings; do
             test -s "$f.png"
             sips -g pixelWidth -g pixelHeight "$f.png" | tee "$f.dim"
           done

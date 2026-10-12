@@ -21,6 +21,27 @@ private func renderSnapshotAndExit() {
         if let e = ProcessInfo.processInfo.environment["QUOTADOCK_EDGE"], let edge = DockEdge(rawValue: e) { store.stripEdge = edge }
     }
     let dark = ProcessInfo.processInfo.environment["QUOTADOCK_DARK"] == "1"
+    if ProcessInfo.processInfo.environment["QUOTADOCK_SETTINGS"] == "1" {
+        // 设置窗口离屏渲染（视觉回归用）
+        let host = NSHostingView(rootView: AnyView(SettingsView(store: store)))
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host.frame = NSRect(origin: .zero, size: NSSize(width: 560, height: 600))
+        host.layoutSubtreeIfNeeded()
+        let size = host.fittingSize
+        host.frame = NSRect(origin: .zero, size: NSSize(width: max(560, size.width), height: max(600, size.height)))
+        host.layoutSubtreeIfNeeded()
+        let scale: CGFloat = 2
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width * scale), pixelsHigh: Int(host.bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = host.bounds.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill()
+        NSBezierPath(rect: host.bounds).fill()
+        host.displayIgnoringOpacity(host.bounds, in: NSGraphicsContext.current!)
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["QUOTADOCK_OUT"] ?? "/tmp/quotadock-settings.png"))
+        exit(0)
+    }
     let root = AnyView(PanelRootView(store: store, initiallyCollapsed: ProcessInfo.processInfo.environment["QUOTADOCK_STRIP"] == "1"))
     let host = NSHostingView(rootView: root)
     host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

@@ -22,7 +22,7 @@ public final class RefreshCoordinator: ObservableObject {
     private let skipList: SkipListStore
     private let now: () -> Date
 
-    private var inFlight: [String: (task: Task<Void, Never>, token: CancellationToken)] = [:]
+    private var inFlight: [String: (task: Task<Void, Never>, token: CancellationToken, source: SourceID)] = [:]
     private var lastCompleted: [String: Date] = [:]
     private var generation = 0
 
@@ -47,17 +47,26 @@ public final class RefreshCoordinator: ObservableObject {
 
     /// 一轮刷新。force=true（手动刷新）：取消在飞任务、bump 代次、无视节流、重探 skip 身份。
     public func refreshAll(force: Bool = false) {
+        refresh(sourceIDs: nil, force: force)
+    }
+
+    /// 单源强制刷新（设置页"验证"按钮）：只作用指定数据源。
+    public func refresh(sourceIDs: [SourceID]?, force: Bool = false) {
         if force {
             generation += 1
-            for (_, flight) in inFlight {
-                flight.token.cancel()
-                flight.task.cancel()
+            for (key, flight) in inFlight {
+                // 单源刷新只取消该源的在飞任务
+                if sourceIDs == nil || sourceIDs!.contains(flight.source) {
+                    flight.task.cancel()
+                    flight.token.cancel()
+                    inFlight[key] = nil
+                }
             }
-            inFlight.removeAll()
         }
         let cfg = configProvider()
         let currentGen = generation
         for source in sources {
+            if let sourceIDs, !sourceIDs.contains(source.id) { continue }
             let enabled: Bool
             if source.id == .zhipu {
                 enabled = true
@@ -113,7 +122,7 @@ public final class RefreshCoordinator: ObservableObject {
             let result = await source.fetch(configuration: config, cancellation: token)
             self?.finish(result: result, generation: generation, wasSkipped: skipped)
         }
-        inFlight[identity.key] = (task, token)
+        inFlight[identity.key] = (task, token, source.id)
     }
 
     private func finish(result: SourceResult, generation: Int, wasSkipped: Bool) {

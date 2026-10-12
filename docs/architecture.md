@@ -91,6 +91,8 @@ protocol QuotaSource {
 - 整文件坏（JSON 解析失败）：保留上一份有效配置，`fileIssues` 暴露问题。
 - SSH 相关（host/user/sshPort/paths）在配置层白名单校验；数据源侧 `ShellSafety`
   单引号转义为纵深防御。
+- **写回**（设置窗口保存）：`ConfigWriter` 深度合并编辑进文件原始 dict（未知字段保留），
+  pretty + 排序键原子写，随后立即热加载。手编 JSON 与设置窗口双向互通。
 
 ### 缓存与 skip
 
@@ -120,6 +122,7 @@ QUOTADOCK_RENDER=1 QUOTADOCK_LOGOS=$PWD/logos .build/debug/QuotaDock        # �
 QUOTADOCK_RENDER=1 QUOTADOCK_DARK=1 QUOTADOCK_LOGOS=$PWD/logos ...           # 暗色
 QUOTADOCK_RENDER=1 QUOTADOCK_STATE=empty ...                                  # 空态引导卡
 QUOTADOCK_RENDER=1 QUOTADOCK_STRIP=1 QUOTADOCK_EDGE=left ...                  # 吸边条
+QUOTADOCK_RENDER=1 QUOTADOCK_SETTINGS=1 ...                                   # 设置窗口
 ```
 
 截图基线存 `docs/`；CI 对渲染产物做非空 + 尺寸断言（像素级基线跨 macOS 版本会抖动，

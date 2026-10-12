@@ -8,6 +8,7 @@ import QuotaDockCore
 struct MiniDashboardView: View {
     @ObservedObject var store: Store
     var onCollapse: (() -> Void)? = nil
+    var onOpenSettings: (() -> Void)? = nil
     @State private var hovering = false
 
     /// 摘要指向的行加更强的权重（只有最紧张项）
@@ -24,6 +25,17 @@ struct MiniDashboardView: View {
                         .font(.system(size: DT.Size.name, weight: .semibold, design: .rounded))
                 }
                 Spacer()
+                if let onOpenSettings {
+                    Button { onOpenSettings() } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: DT.Size.value, weight: .medium))
+                            .frame(minWidth: DT.minHitSize - 6, minHeight: DT.minHitSize - 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L("打开设置（连接来源/验证/显示偏好）", "Open settings (sources / verify / preferences)"))
+                    .accessibilityLabel(L("打开设置", "Open settings"))
+                }
                 Button { store.refreshAll(force: true) } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: DT.Size.value, weight: .semibold))

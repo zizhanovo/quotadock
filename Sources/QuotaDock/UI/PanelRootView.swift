@@ -6,10 +6,12 @@ import SwiftUI
 struct PanelRootView: View {
     @ObservedObject var store: Store
     @State private var collapsed: Bool
+    var onOpenSettings: (() -> Void)? = nil
 
-    init(store: Store, initiallyCollapsed: Bool = false) {
+    init(store: Store, initiallyCollapsed: Bool = false, onOpenSettings: (() -> Void)? = nil) {
         self.store = store
         _collapsed = State(initialValue: initiallyCollapsed)
+        self.onOpenSettings = onOpenSettings
     }
 
     var body: some View {
@@ -26,7 +28,7 @@ struct PanelRootView: View {
                     store.stripEdge = e
                     UserDefaults.standard.set(e.rawValue, forKey: "stripEdge")
                 }
-            })
+            }, onOpenSettings: onOpenSettings)
         }
     }
 }
