@@ -67,19 +67,17 @@ public struct KimiSource: QuotaSource {
                                                    : .credentialStale(hint: hint))
         }
         func pct(_ ratio: Double) -> Int { Int((ratio * 100).rounded()) }
-        func resetBeijing(_ s: String) -> String {
-            guard let date = isoDate(s) else { return "" }
-            let diff = date.timeIntervalSinceNow
-            let f = diff < 86400 ? Fmt.bjTime : Fmt.bjDateHM
-            return f.string(from: date)
+        func resetMs(_ s: String) -> Double? {
+            guard let d = isoDate(s) else { return nil }
+            return d.timeIntervalSince1970 * 1000
         }
         let p5 = pct(r5), p7 = pct(r7)
         let top = max(p5, p7)
-        let r5s = resetBeijing(h5["reset_time"] as? String ?? "")
-        let r7s = resetBeijing(w7["reset_time"] as? String ?? "")
-        let detail = "5h \(p5)% · \(L("周", "wk")) \(p7)% · \(L("重置", "reset")) \(r5s) / \(r7s)"
-        let snapshot = QuotaSnapshot(primaryUsedPercent: top, fiveHour: nil, weekly: nil,
-                                     detail: detail, stale: false, meta: [:])
+        let snapshot = QuotaSnapshot(
+            primaryUsedPercent: top,
+            fiveHour: LimitEntry(percentage: p5, nextResetTime: resetMs(h5["reset_time"] as? String ?? "")),
+            weekly: LimitEntry(percentage: p7, nextResetTime: resetMs(w7["reset_time"] as? String ?? "")),
+            detail: "", stale: false, meta: [:])
         return SourceResult(identity: identity, snapshot: snapshot, status: .success)
     }
 }

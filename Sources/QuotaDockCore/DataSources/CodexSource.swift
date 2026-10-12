@@ -87,25 +87,24 @@ public struct CodexSource: QuotaSource {
         }
         let plan = (obj["plan_type"] as? String ?? "").capitalized
         var pct: Int?
-        var reset = ""
+        var resetAtMs: Double?
         if let rl = obj["rate_limit"] as? [String: Any], let pw = rl["primary_window"] as? [String: Any] {
             pct = (pw["used_percent"] as? NSNumber)?.intValue
-            if let ra = (pw["reset_at"] as? NSNumber)?.doubleValue {
-                let diff = ra - Date().timeIntervalSince1970
-                if diff > 0 {
-                    if diff < 86400 { reset = L("重置 \(Int(diff) / 3600)小时\((Int(diff) % 3600) / 60)分后", "resets in \(Int(diff) / 3600)h\((Int(diff) % 3600) / 60)m") }
-                    else { reset = L("重置 \(Int(diff) / 86400)天\((Int(diff) % 86400) / 3600)小时后", "resets in \(Int(diff) / 86400)d\((Int(diff) % 86400) / 3600)h") }
-                }
+            if let ra = (pw["reset_at"] as? NSNumber)?.doubleValue, ra > Date().timeIntervalSince1970 {
+                resetAtMs = ra * 1000
             }
         }
-        var detail = L("周窗口", "Weekly") + "\(reset.isEmpty ? "" : " · " + reset)"
+        var detail = ""
         if let credits = (obj["credits"] as? [String: Any])?["balance"] as? String, credits != "0" {
-            detail += " · credits \(credits)"
+            detail = "credits \(credits)"
         }
         let name = plan.isEmpty ? "Codex" : "Codex \(plan)"
-        let snapshot = QuotaSnapshot(primaryUsedPercent: pct, fiveHour: nil, weekly: nil,
-                                     detail: detail, stale: false,
-                                     meta: plan.isEmpty ? [:] : ["plan": plan])
+        let snapshot = QuotaSnapshot(
+            primaryUsedPercent: pct,
+            fiveHour: nil,
+            weekly: pct.map { LimitEntry(percentage: $0, nextResetTime: resetAtMs) },
+            detail: detail, stale: false,
+            meta: plan.isEmpty ? [:] : ["plan": plan])
         return SourceResult(identity: identity, snapshot: snapshot, status: .success,
                             displayNameOverride: plan.isEmpty ? nil : name)
     }

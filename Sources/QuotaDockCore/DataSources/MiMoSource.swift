@@ -34,12 +34,11 @@ public struct MiMoSource: QuotaSource {
         let age = Date().timeIntervalSince(fetchedAt)
         let stale = age > FreshnessPolicy.staleAfter
         let pctUsed = Int(used.rounded())
-        var detail = L("已用 \(pctUsed)%", "used \(pctUsed)%")
-            + " · " + L("剩余 \(Int(remaining.rounded()))%", "left \(Int(remaining.rounded()))%")
-        if !resetDate.isEmpty { detail += " · " + L("重置", "reset") + " \(resetDate)" }
-        if !plan.isEmpty { detail += " · \(plan)" }
+        // 结构化：主值走 primary（单条"已用"进度条），重置日与套餐走补充位/后缀
+        let detail = resetDate.isEmpty ? "" : L("重置", "reset") + " \(resetDate)"
         let snapshot = QuotaSnapshot(primaryUsedPercent: pctUsed, fiveHour: nil, weekly: nil,
-                                     detail: detail, stale: stale, meta: [:])
+                                     detail: detail, stale: stale,
+                                     meta: plan.isEmpty ? [:] : ["plan": plan, "remaining": String(Int(remaining.rounded()))])
         return SourceResult(identity: identity, snapshot: snapshot, status: .success, observedAt: fetchedAt)
     }
 }

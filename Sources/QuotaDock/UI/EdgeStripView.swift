@@ -17,23 +17,13 @@ struct EdgeStrip: View {
         let badge: Int?
     }
 
-    /// 名称 → 品牌图标 id（logos/ 目录下的同名 .svg/.png）；nil=无品牌图走首字块
-    static func logoID(for name: String) -> String? {
-        if name.hasPrefix("Codex") { return "openai" }
-        if name.hasPrefix("CC ") { return "claude" }
-        if name.hasPrefix("Kimi") { return "kimi" }
-        if name.hasPrefix("MiMo") { return "xiaomi" }
-        if name.hasPrefix("个人") || name.hasPrefix("Personal") { return "zhipu" }
-        return nil
-    }
-
     private var items: [StripItem] {
         var raw: [(String, String, Int?, String?)] = []   // id, name, used, logo
         for k in store.visibleKeys {
             raw.append((k.identityKey, k.name, k.quota.map { min(max($0.maxPercentage, 0), 100) }, "zhipu"))
         }
         for s in store.extras {
-            if let u = s.usedPercent { raw.append((s.id, s.name, min(u, 100), EdgeStrip.logoID(for: s.name))) }
+            if let u = s.usedPercent { raw.append((s.id, s.name, min(u, 100), BrandLogo.logoID(for: s.name))) }
         }
         var counts: [String: Int] = [:]
         for r in raw where r.3 != nil { counts[r.3!, default: 0] += 1 }
@@ -47,30 +37,10 @@ struct EdgeStrip: View {
         }
     }
 
-    /// logo 目录：优先 QUOTADOCK_LOGOS 环境变量（离屏渲染用），否则 app bundle Resources/logos
-    static func logosDir() -> URL? {
-        if let p = ProcessInfo.processInfo.environment["QUOTADOCK_LOGOS"] { return URL(fileURLWithPath: p) }
-        return Bundle.main.resourceURL?.appendingPathComponent("logos")
-    }
-    private static var logoCache: [String: NSImage?] = [:]
-    private static func logoImage(_ id: String) -> NSImage? {
-        if let c = logoCache[id] { return c }
-        var img: NSImage?
-        for ext in ["svg", "png"] {
-            if let u = EdgeStrip.logosDir()?.appendingPathComponent("\(id).\(ext)") {
-                img = NSImage(contentsOf: u)
-                if img != nil { break }
-            }
-        }
-        img?.isTemplate = true   // 单色模板渲染，深浅模式统一 secondary 灰
-        logoCache[id] = img
-        return img
-    }
-
     /// 识别块：品牌 logo（文件缺失/加载失败回退首字块）；智谱多卡同 logo 靠 ①② 角标区分
     @ViewBuilder
     private func ident(_ it: StripItem) -> some View {
-        if let lid = it.logo, let img = EdgeStrip.logoImage(lid) {
+        if let lid = it.logo, let img = BrandLogo.logoImage(lid) {
             ZStack(alignment: .bottomTrailing) {
                 Image(nsImage: img).resizable().renderingMode(.template)
                     .foregroundStyle(.secondary)

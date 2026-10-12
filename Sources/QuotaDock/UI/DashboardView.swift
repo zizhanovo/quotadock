@@ -11,11 +11,6 @@ struct MiniDashboardView: View {
     var onOpenSettings: (() -> Void)? = nil
     @State private var hovering = false
 
-    /// 摘要指向的行加更强的权重（只有最紧张项）
-    private var tightestName: String? {
-        store.summary.flatMap { $0.usedPercent != nil ? $0.name : nil }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: DT.rowSpacing) {
             // 头部：本地时间 + 手动刷新（唯一主动作按钮）
@@ -52,20 +47,16 @@ struct MiniDashboardView: View {
                         showRemaining: store.showRemaining,
                         lastUpdate: store.lastUpdate)
 
-            // 2. 服务列表：智谱 key 行（按紧张度降序）+ 其他服务行
-            let keys = store.visibleKeys
-            if keys.isEmpty, store.extras.isEmpty, let err = store.lastError {
+            // 2. 服务列表：统一图表行，按紧张度降序（智谱 key 与其他服务同一版式）
+            let rows = store.usageRows
+            if rows.isEmpty, let err = store.lastError {
                 Text(err).font(.system(size: DT.Size.body)).foregroundStyle(.secondary)
             }
-            ForEach(keys) { kq in
-                KeyRow(kq: kq, showRemaining: store.showRemaining,
-                       isTightest: kq.name == tightestName)
-            }
-            if !store.extras.isEmpty {
-                Divider()
-                ForEach(store.extras) { s in
-                    ServiceRow(s: s, showRemaining: store.showRemaining)
-                }
+            let tightestID = rows.first(where: { $0.primary != nil })?.id
+            ForEach(rows) { row in
+                UnifiedUsageRow(row: row,
+                                showRemaining: store.showRemaining,
+                                isTightest: row.id == tightestID)
             }
             Spacer(minLength: 0)
         }

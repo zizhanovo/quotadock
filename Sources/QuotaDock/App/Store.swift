@@ -4,16 +4,19 @@ import QuotaDockCore
 
 // MARK: - App 状态适配层：协调器结果 → 现有 UI 模型
 
-/// UI 行模型（其他服务：Codex / Kimi / MiMo / CC）
+/// 其他服务（Codex / Kimi / MiMo / CC）的行数据——结构化，不做预格式化字符串；
+/// 统一版式由 UnifiedUsageRow 渲染
 struct ExtraService: Identifiable {
-    let id: String           // 稳定身份 key（ForEach 与合并主键）
+    let id: String           // 稳定身份 key
     let name: String
-    let value: String        // 右侧主数值（有进度条时放数据时间）
-    let detail: String       // 第二行说明
-    let usedPercent: Int?    // 状态色依据；nil=无用量概念
-    var fiveBar: LimitEntry? = nil   // 有值时渲染 5h/周 双进度条（Claude Code VPS）
+    let suffix: String       // 套餐/credits 等次级标识（小字）
+    let usedPercent: Int?    // 主值：大号数字、状态色、排序
+    var fiveBar: LimitEntry? = nil
     var weekBar: LimitEntry? = nil
-    var stale: Bool = false          // 数据停更超 24h，⚠ 标橙
+    let resetFallback: String    // 无重置窗口时的补充（重置日期 / credits）
+    let observedAt: Date?
+    var stale: Bool = false      // 数据停更超 24h，⚠ 标橙
+    var statusHint: String? = nil // 无数据/错误时的引导文案（有数据时挂说明行）
 }
 
 /// 智谱 key 行模型
@@ -135,7 +138,10 @@ final class Store: ObservableObject {
             let pct = kq.quota.map { "\($0.maxPercentage)%" } ?? (kq.error.map { _ in "err" } ?? "-")
             return "\(kq.name)(…\(kq.keyTail))=\(pct)"
         }.joined(separator: " ")
-        let svcPart = services.map { "\($0.name)=\($0.value)" }.joined(separator: " ")
+        let svcPart = services.map { s in
+            let pct = s.usedPercent.map { "\($0)%" } ?? (s.statusHint.map { _ in "err" } ?? "-")
+            return "\(s.name)=\(pct)"
+        }.joined(separator: " ")
         let signature = keyPart + " | " + svcPart
         guard signature != lastLoggedSignature else { return }
         lastLoggedSignature = signature
@@ -216,45 +222,75 @@ final class Store: ObservableObject {
                         keyTail: tail, quota: quota, error: error, lastGoodAt: outcome.lastGoodAt)
     }
 
-    /// 其他服务 outcome → ExtraService
+    /// 其他服务 outcome → 结构化行数据（统一版式由 UnifiedUsageRow 渲染）
     static func extraRow(for outcome: SourceOutcome) -> ExtraService {
         let snap = outcome.snapshot
-        let hasData = snap != nil
-        // 数据时间列（MiMo/CC 的时间型 value）
-        let when: String
-        if let at = outcome.lastGoodAt {
-            let f = Date().timeIntervalSince(at) > FreshnessPolicy.staleAfter ? Fmt.bjDateHM : Fmt.bjTime
-            let prefix = (snap?.stale ?? false) ? "⚠ " + L("停更于 ", "stale since ") : L("更新 ", "updated ")
-            when = prefix + f.string(from: at)
-        } else {
-            when = ""
-        }
-        let value: String
-        let detail: String
-        if let pct = snap?.primaryUsedPercent {
-            value = outcome.identity.source == .mimo || outcome.identity.source == .claudeCode
-                ? when : "\(pct)%"
-            detail = snap?.detail ?? ""
-        } else if hasData {
-            value = when.isEmpty ? "—" : when
-            detail = snap?.detail ?? ""
-        } else {
+        // 本轮异常时的行内提示：有旧值 → 挂说明行（替代重置文案）；无值 → 替代整个图表区
+        var statusHint: String?
+        if outcome.status != .success {
             switch outcome.status {
             case .noDataYet(let hint):
-                value = "—"
-                detail = hint
+                statusHint = hint
             default:
-                value = "❌"
-                detail = FetchClassifier.displayHint(for: outcome.status,
-                                                     lastGoodAt: outcome.lastGoodAt,
-                                                     language: ConfigurationStore.shared.language)
+                statusHint = FetchClassifier.displayHint(for: outcome.status,
+                                                         lastGoodAt: outcome.lastGoodAt,
+                                                         language: ConfigurationStore.shared.language)
             }
         }
-        return ExtraService(id: outcome.identity.key, name: outcome.displayName,
-                            value: value, detail: detail,
-                            usedPercent: snap?.primaryUsedPercent,
-                            fiveBar: snap?.fiveHour, weekBar: snap?.weekly,
-                            stale: snap?.stale ?? false)
+        return ExtraService(
+            id: outcome.identity.key,
+            name: outcome.displayName,
+            suffix: snap?.meta["plan"] ?? "",
+            usedPercent: snap?.primaryUsedPercent,
+            fiveBar: snap?.fiveHour,
+            weekBar: snap?.weekly,
+            resetFallback: snap?.detail ?? "",
+            observedAt: outcome.lastGoodAt,
+            stale: snap?.stale ?? false,
+            statusHint: statusHint
+        )
+    }
+
+    // MARK: 统一用量列表（图表化单一列表，替代旧的 智谱节+其他服务节 两截）
+
+    /// 智谱 key + 其他服务 → 同构行，按主值降序；勾选/自动切换即时生效
+    var usageRows: [UsageRowData] {
+        var rows: [UsageRowData] = visibleKeys.map { kq in
+            let level = kq.quota.map { $0.level } ?? "-"
+            var suffix = "…\(kq.keyTail)"
+            if level != "-", let q = kq.quota { _ = q; suffix += " · \(level.uppercased())" }
+            return UsageRowData(
+                id: kq.identityKey,
+                name: kq.name,
+                suffix: suffix,
+                brand: "zhipu",
+                primary: kq.quota?.maxPercentage,
+                five: kq.quota?.fiveHour,
+                weekly: kq.quota?.weekly,
+                singleLabel: nil,
+                resetFallback: "",
+                observedAt: kq.lastGoodAt,
+                stale: false,
+                statusHint: kq.error
+            )
+        }
+        rows.append(contentsOf: extras.map { s in
+            UsageRowData(
+                id: s.id,
+                name: s.name,
+                suffix: s.suffix,
+                brand: BrandLogo.logoID(for: s.name),
+                primary: s.usedPercent,
+                five: s.fiveBar,
+                weekly: s.weekBar,
+                singleLabel: (s.fiveBar == nil && s.weekBar == nil) ? L("已用", "used") : nil,
+                resetFallback: s.resetFallback,
+                observedAt: s.observedAt,
+                stale: s.stale,
+                statusHint: s.statusHint
+            )
+        })
+        return rows.sorted { ($0.primary ?? -1) > ($1.primary ?? -1) }
     }
 
     // MARK: 刷新调度

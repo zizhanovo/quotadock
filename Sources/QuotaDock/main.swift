@@ -80,13 +80,24 @@ private func seedRenderFixtures(_ store: Store) {
                  error: nil, lastGoodAt: Date().addingTimeInterval(-120)),
     ]
     store.extras = [
-        ExtraService(id: "codex:default", name: "Codex Pro", value: "41%", detail: "周窗口 · 重置 5天21小时后", usedPercent: 41),
-        ExtraService(id: "kimi:default", name: "Kimi", value: "Allegretto", detail: "子瞻 · 已连接 · 无余额接口", usedPercent: nil),
-        ExtraService(id: "mimo:default", name: "MiMo", value: "更新 15:12", detail: "已用 63% · 剩余 37% · 重置 2026-10-13 · MiMo 进阶", usedPercent: 63),
-        ExtraService(id: "cc:racknerd", name: "CC racknerd", value: "更新 11:31", detail: "5h 37% · 周 5%", usedPercent: 37,
-                     fiveBar: mk(37, 240), weekBar: mk(5, 7 * 1440)),
-        ExtraService(id: "cc:racknerd2", name: "CC racknerd2", value: "⚠ 停更于 10/9 15:26", detail: "5h 6% · 周 1%", usedPercent: 6,
-                     fiveBar: mk(6, 180), weekBar: mk(1, 3 * 1440), stale: true),
+        ExtraService(id: "codex:default", name: "Codex Pro", suffix: "PRO", usedPercent: 41,
+                     weekBar: mk(41, 5 * 1440 + 21 * 60), resetFallback: "credits 3.5",
+                     observedAt: Date().addingTimeInterval(-240)),
+        ExtraService(id: "kimi:default", name: "Kimi", suffix: "", usedPercent: 44,
+                     fiveBar: mk(0, 96), weekBar: mk(44, 5 * 1440), resetFallback: "",
+                     observedAt: Date().addingTimeInterval(-1200)),
+        ExtraService(id: "mimo:default", name: "MiMo", suffix: "MiMo 进阶", usedPercent: 63,
+                     resetFallback: L("重置 2026-10-13", "reset 2026-10-13"),
+                     observedAt: Date().addingTimeInterval(-4 * 3600)),
+        ExtraService(id: "cc:racknerd", name: "CC racknerd", suffix: "", usedPercent: 37,
+                     fiveBar: mk(37, 240), weekBar: mk(5, 7 * 1440), resetFallback: "",
+                     observedAt: Date().addingTimeInterval(-1800)),
+        ExtraService(id: "cc:racknerd2", name: "CC racknerd2", suffix: "", usedPercent: 6,
+                     fiveBar: mk(6, 180), weekBar: mk(1, 3 * 1440), resetFallback: "",
+                     observedAt: Date().addingTimeInterval(-3 * 86400), stale: true),
+        ExtraService(id: "kimi:err", name: "Kimi 2", suffix: "", usedPercent: nil,
+                     resetFallback: "", observedAt: nil,
+                     statusHint: L("token 过期 · 跑一次 kimi CLI 自动续期", "token expired · run kimi CLI to refresh")),
     ]
     store.lastUpdate = Date().addingTimeInterval(-120)
 }
