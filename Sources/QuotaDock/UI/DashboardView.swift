@@ -42,15 +42,10 @@ struct MiniDashboardView: View {
                 .accessibilityLabel(L("立即刷新", "Refresh now"))
             }
 
-            // 1. 总览摘要：最紧张服务 / 引导卡
-            SummaryCard(summary: store.summary,
-                        showRemaining: store.showRemaining,
-                        lastUpdate: store.lastUpdate)
-
-            // 2. 服务列表：统一图表行，按紧张度降序（智谱 key 与其他服务同一版式）
+            // 服务列表：统一图表行，按紧张度降序（首行即最紧张项，名称加粗）
             let rows = store.usageRows
-            if rows.isEmpty, let err = store.lastError {
-                Text(err).font(.system(size: DT.Size.body)).foregroundStyle(.secondary)
+            if rows.isEmpty {
+                EmptyStateCard()
             }
             let tightestID = rows.first(where: { $0.primary != nil })?.id
             ForEach(rows) { row in

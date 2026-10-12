@@ -148,32 +148,6 @@ final class Store: ObservableObject {
         Log.info("面板: \(signature.isEmpty ? "（无数据）" : signature)")
     }
 
-    // MARK: 摘要（响应显示勾选/自动切换的即时变化，故为计算属性）
-
-    /// 全部可见行里最紧张的一项；无有效数据时为 nil（摘要卡转引导态）
-    var summary: SummaryInfo? {
-        var best: (name: String, used: Int, reset: Double?, at: Date?)?
-        for kq in visibleKeys {
-            guard let q = kq.quota else { continue }
-            let used = q.maxPercentage
-            if best == nil || used > best!.used {
-                let reset = [q.fiveHour?.nextResetTime, q.weekly?.nextResetTime]
-                    .compactMap { $0 }.filter { $0 > Date().timeIntervalSince1970 * 1000 }.min()
-                best = (kq.name, used, reset, kq.lastGoodAt)
-            }
-        }
-        for s in extras {
-            guard let used = s.usedPercent else { continue }
-            if best == nil || used > best!.used {
-                let reset = [s.fiveBar?.nextResetTime, s.weekBar?.nextResetTime]
-                    .compactMap { $0 }.filter { $0 > Date().timeIntervalSince1970 * 1000 }.min()
-                best = (s.name, used, reset, nil)
-            }
-        }
-        guard let b = best else { return nil }
-        return SummaryInfo(name: b.name, usedPercent: b.used, nearestResetMs: b.reset, observedAt: b.at)
-    }
-
     /// 设置区"来源状态"：每个数据源一颗状态点
     var sourceLines: [SourceLine] {
         let cfg = ConfigurationStore.shared.currentSnapshot()
