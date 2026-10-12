@@ -1,0 +1,39 @@
+{
+  "language": "zh",
+  "timezone": "Asia/Shanghai",
+  "refreshIntervalSeconds": 180,
+  "thresholds": { "yellow": 60, "red": 85 },
+  "zhipu": {
+    "providerConfigPath": "~/.zcode/v2/provider_config.json",
+    "credentialsPath": "~/.zcode/v2/credentials.json",
+    "names": { "bigmodel-api-2": "周卡", "bigmodel-api": "新卡" },
+    "keys": [
+      { "name": "my-key", "key": "xxxxxxxxxxxxxxxx.yyyyyyyy" }
+    ]
+  },
+  "codex": {
+    "enabled": true,
+    "authPath": "~/.codex/auth.json",
+    "proxyHost": "127.0.0.1",
+    "proxyPort": 6152,
+    "retries": 4,
+    "retryIntervalSeconds": 15
+  },
+  "kimi": {
+    "enabled": true,
+    "credentialsPath": "~/.kimi-code/credentials/kimi-code.json"
+  },
+  "mimo": { "enabled": true },
+  "claudeCode": {
+    "sshConnectTimeout": 6,
+    "servers": [
+      {
+        "host": "my-vps",
+        "name": "vps1",
+        "sshPort": "",
+        "paths": ["/home/claude/.claude.json", "/root/.claude.json"]
+      }
+    ]
+  },
+  "autoPing": { "enabled": false, "command": "/opt/homebrew/bin/glm-ping" }
+}
