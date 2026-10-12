@@ -36,15 +36,18 @@
   },
   "mimo": {
     "enabled": true,
+    "cachePath": "~/.cache/quotadock/mimo-usage.json",
     "refreshIntervalSeconds": 180
   },
   "claudeCode": {
     "sshConnectTimeout": 6,
+    "refreshUsage": true,
     "servers": [
       {
         "host": "my-vps",
         "name": "vps1",
         "sshPort": "",
+        "user": "",
         "paths": [
           "/home/claude/.claude.json",
           "/root/.claude.json"

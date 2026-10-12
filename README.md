@@ -11,8 +11,8 @@
 | 智谱 Coding Plan（多 key） | 5h 窗口% + 周额度% + 重置倒计时 | 官方监控接口，只读不耗额度 |
 | Codex（ChatGPT OAuth） | 周窗口% + credits | 官方用量接口，直连/代理交替重试 |
 | Kimi | 5h 窗口% + 周% | 官方套餐接口（读本地 CLI 凭据） |
-| MiMo | 占位 | 套餐接口需 App 内会话，待接入 |
-| Claude Code（远程 VPS） | 5h% + 周% + 数据时间 | **纯被动零探针**：SSH 读服务器上 Claude Code 真实调用后缓存的用量快照，不发任何额外 API 请求 |
+| MiMo | 已用% + 剩余% + 重置日 + 套餐名 | **纯被动零探针**：本地助手 `mimo-usage-sync` 走小米 SSO 只读拉取后写缓存，QuotaDock 只读缓存文件 |
+| Claude Code（远程 VPS） | 5h% + 周% + 数据时间 | SSH 在**服务器上**跑 `claude -p /usage` 刷新后读缓存（凭据不出机、走 VPS 静态 IP）；`refreshUsage: false` 可退回纯被动 |
 
 每个服务都可以在配置里单独开关。
 
@@ -63,18 +63,31 @@ rm -rf <clone 目录>
 | `codex.retries` / `retryIntervalSeconds` | `4` / `15` | 直连/代理交替重试策略 |
 | `codex` / `kimi` / `mimo` `.refreshIntervalSeconds` | `180` | 各服务独立刷新间隔（节流，未到期跳过并保留旧数据） |
 | `kimi.enabled` / `credentialsPath` | `true` / `~/.kimi-code/...` | Kimi CLI 凭据（token 15 分钟过期，跑一次 `kimi` CLI 自动续期） |
-| `mimo.enabled` | `true` | 当前为安全占位 |
+| `mimo.enabled` | `true` | 开关 |
+| `mimo.cachePath` | `~/.cache/quotadock/mimo-usage.json` | 用量缓存（由 `./mimo-usage-sync` 写入；停更超 24h 标 ⚠） |
 | `claudeCode.servers` | `[]` | 远程服务器列表：`{"host": "ssh别名", "name": "显示名", "sshPort": "", "paths": ["/home/claude/.claude.json", "/root/.claude.json"]}`；多路径取快照最新 |
-| `claudeCode.sshConnectTimeout` | `6` | SSH 连接超时秒数 |
+| `claudeCode.sshConnectTimeout` | `10` | SSH 连接超时秒数（走跳板的两级握手约 5s，默认留出余量；失败时保留最近成功值） |
 | `claudeCode.refreshIntervalSeconds` | `600` | CC 服务器刷新间隔（快照只在有人用时才变，默认放宽到 10 分钟） |
 | `claudeCode.sshMultiplexing` | `true` | SSH 连接复用（ControlMaster，跳板场景握手开销归零） |
 | `autoPing.enabled` / `command` | `false` | 个人套餐 5h 窗口自动敲活命令（见 `glm-ping.swift`） |
 
 凭据类文件（`auth.json`、`kimi-code.json`、SSH key）只在本机读取，QuotaDock 不向任何第三方发送。
 
-## Claude Code 数据源说明（零探针设计）
+## Claude Code 数据源说明
 
-Claude Code 在真实调用后会把自己的用量快照写进 `~/.claude.json` 的 `cachedUsageUtilization`（5h/周百分比、重置时间、抓取时间）。QuotaDock 只通过 SSH 读这个文件：**有人用就自动新鲜，没人用就如实显示停更时间**（超 24h 标 ⚠），不产生任何额外 API 请求，也不会碰服务器上的凭据。
+Claude Code 把用量缓存在服务器 `~/.claude.json` 的 `cachedUsageUtilization`。**2.1.x 起普通对话不再写这个缓存**，所以 QuotaDock 默认先 SSH 在服务器上跑一次 `claude -p /usage`（`claudeCode.refreshUsage`，默认开；`servers[].user` 指定跑 claude 的系统账号），再读缓存。
+
+安全约定：**VPS 凭据绝不拷回本机**；`claude` 调用只在服务器上发起，沿其静态 IP 代理出口。`refreshUsage: false` 则退回纯被动读缓存（可能长时间停更，超 24h 标 ⚠）。
+
+## MiMo 数据源说明（零探针设计）
+
+MiMo Desktop 的套餐用量接口挂在小米账号会话上（`https://mimo-server-cn.xiaomimimo.com/api/user/usage`）。QuotaDock 不碰凭据：
+
+```bash
+./mimo-usage-sync    # 本地只读 SSO，写 ~/.cache/quotadock/mimo-usage.json
+```
+
+助手从 MiMo Desktop 本机 cookie 取 `passToken`，走 `sid=mimopc` 换 `serviceToken` 后只读拉取用量/订阅，**不上报任何第三方**。QuotaDock 只读缓存文件；可用 launchd/cron 定时跑助手，或在 QuotaDock 手动刷新前先跑一次。
 
 ## 开发
 

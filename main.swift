@@ -655,18 +655,77 @@ func fetchKimiService(done: @escaping (ExtraService?) -> Void) {
     }.resume()
 }
 
-/// MiMo 编码套餐额度暂未接入：官方套餐接口需要桌面 App 内专属会话，
-/// 当前不触网、不读取或写入凭据/缓存，避免把开放平台 API 计费误显示为套餐额度。
+/// MiMo 套餐额度：纯被动读本地缓存（mimo-usage-sync 写入），QuotaDock 不碰凭据、不发请求。
+/// 官方接口 percent 是「剩余」，缓存里同时给出 usedPercent；数据停更超 24h 标 ⚠。
 func fetchMiMoService(done: @escaping (ExtraService?) -> Void) {
-    DispatchQueue.main.async {
-        done(ExtraService(name: "MiMo", value: "—", detail: L("编码套餐额度待认证", "plan quota pending auth"), usedPercent: nil))
+    let path = Conf.shared["mimo"]?.path("cachePath", "~/.cache/quotadock/mimo-usage.json")
+        ?? NSHomeDirectory() + "/.cache/quotadock/mimo-usage.json"
+    DispatchQueue.global(qos: .utility).async {
+        func empty(_ hint: String) -> ExtraService {
+            ExtraService(name: "MiMo", value: "—", detail: hint, usedPercent: nil)
+        }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              (obj["ok"] as? Bool) == true,
+              let usage = obj["usage"] as? [String: Any],
+              let used = (usage["usedPercent"] as? NSNumber)?.doubleValue else {
+            DispatchQueue.main.async {
+                done(empty(L("跑 mimo-usage-sync 同步额度", "run mimo-usage-sync to sync")))
+            }
+            return
+        }
+        let remaining = (usage["remainingPercent"] as? NSNumber)?.doubleValue ?? (100 - used)
+        let resetDate = usage["resetDate"] as? String ?? ""
+        let plan = ((obj["subscription"] as? [String: Any])?["title"] as? String)
+            ?? ((obj["subscription"] as? [String: Any])?["planCode"] as? String)
+            ?? ""
+        let fetchedAt = Date(timeIntervalSince1970: (obj["fetchedAt"] as? NSNumber)?.doubleValue ?? 0)
+        let age = Date().timeIntervalSince(fetchedAt)
+        let stale = age > 86400
+        let when = (stale ? "⚠ " + L("停更于 ", "stale since ") : L("更新 ", "updated "))
+            + (age < 86400 ? Fmt.bjTime.string(from: fetchedAt) : Fmt.bjDateHM.string(from: fetchedAt))
+        let pctUsed = Int(used.rounded())
+        var detail = L("已用 \(pctUsed)%", "used \(pctUsed)%")
+            + " · " + L("剩余 \(Int(remaining.rounded()))%", "left \(Int(remaining.rounded()))%")
+        if !resetDate.isEmpty { detail += " · " + L("重置", "reset") + " \(resetDate)" }
+        if !plan.isEmpty { detail += " · \(plan)" }
+        let row = ExtraService(name: "MiMo", value: when, detail: detail, usedPercent: pctUsed, stale: stale)
+        DispatchQueue.main.async { done(row) }
     }
 }
 
-// MARK: - Claude Code（远程 VPS，纯被动：零额外 API 请求）
-// 不发任何探针：SSH 读服务器上 Claude Code 在真实调用后自己缓存的
-// cachedUsageUtilization（5h/周用量 + 重置时间 + 抓取时间），展示时标注数据新鲜度。
-// 服务器在 config `claudeCode.servers` 配置：{host, name?, paths?}。
+// MARK: - Claude Code（远程 VPS）
+// 优先 SSH 在服务器上跑一次 `claude -p /usage` 刷新缓存（凭据/流量都留在 VPS，走其静态 IP 出口），
+// 再只读 cachedUsageUtilization。可配置 claudeCode.refreshUsage=false 回到纯被动模式。
+// 服务器在 config `claudeCode.servers` 配置：{host, name?, paths?, user?}。
+
+// CC lastGood 缓存：SSH 走跳板时两级握手 ~5s，ConnectTimeout 稍紧或跳板抖动就会失败
+// （多台同跳板会同时挂）。与 Codex/Kimi 同策略：失败间隙展示最近成功值，标注缓存时间。
+func ccLastGoodWrite(_ label: String, _ row: ExtraService) {
+    UserDefaults.standard.set(["name": row.name, "value": row.value, "detail": row.detail,
+                               "pct": row.usedPercent ?? -1,
+                               "fiveP": row.fiveBar?.percentage ?? -1, "fiveReset": row.fiveBar?.nextResetTime ?? 0,
+                               "weekP": row.weekBar?.percentage ?? -1, "weekReset": row.weekBar?.nextResetTime ?? 0,
+                               "at": Date()], forKey: "ccLastGood.\(label)")
+}
+func ccCachedRow(_ label: String) -> ExtraService? {
+    guard let d = UserDefaults.standard.dictionary(forKey: "ccLastGood.\(label)") else { return nil }
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm"
+    let at = d["at"] as? Date ?? Date()
+    func bar(_ p: String, _ r: String) -> LimitEntry? {
+        guard let pv = d[p] as? Int, pv >= 0 else { return nil }
+        let rv = d[r] as? Double ?? 0
+        return LimitEntry(percentage: pv, usage: nil, currentValue: nil, nextResetTime: rv > 0 ? rv : nil)
+    }
+    let pct = d["pct"] as? Int
+    return ExtraService(name: d["name"] as? String ?? "CC \(label)",
+                        value: L("缓存 \(f.string(from: at))", "cached \(f.string(from: at))"),
+                        detail: d["detail"] as? String ?? "",
+                        usedPercent: (pct == nil || pct! < 0) ? nil : pct,
+                        fiveBar: bar("fiveP", "fiveReset"), weekBar: bar("weekP", "weekReset"),
+                        stale: Date().timeIntervalSince(at) > 86400)
+}
 
 func fetchClaudeCodeService(server: Conf, done: @escaping (ExtraService?) -> Void) {
     let host = server.str("host")
@@ -677,11 +736,20 @@ func fetchClaudeCodeService(server: Conf, done: @escaping (ExtraService?) -> Voi
     let pyPaths = paths.map { "'\($0)'" }.joined(separator: ",")
     let sshPort = server.str("sshPort", "")
     let portArgs = sshPort.isEmpty ? [] : ["-p", sshPort]
-    let cmd = "python3 -c \"import json,os\nc=[]\nfor p in [\(pyPaths)]:\n if os.path.exists(p):\n  d=json.load(open(p));u=d.get('cachedUsageUtilization')\n  if u:c.append((u.get('fetchedAtMs',0),(d.get('oauthAccount') or {}).get('emailAddress'),u))\nb=max(c) if c else None\nprint(json.dumps({'email':(b[1] if b else None),'u':(b[2] if b else None)}))\""
+    // 2.1.x 起普通对话不再写 cachedUsageUtilization；在服务器上跑 /usage 才会刷新。
+    // 只允许在远端执行，禁止把 VPS 凭据拿到本机调用。
+    let refreshUsage = Conf.shared["claudeCode"]?.bool("refreshUsage", true) ?? true
+    let runAs = server.str("user", "")  // 空 = SSH 登录用户（通常是 root）
+    var prelude = ""
+    if refreshUsage {
+        let claudeCmd = runAs.isEmpty ? "claude -p /usage" : "sudo -u \(runAs) -n claude -p /usage"
+        prelude = "\(claudeCmd) >/dev/null 2>&1; "
+    }
+    let cmd = prelude + "python3 -c \"import json,os\nc=[]\nfor p in [\(pyPaths)]:\n if os.path.exists(p):\n  d=json.load(open(p));u=d.get('cachedUsageUtilization')\n  if u:c.append((u.get('fetchedAtMs',0),(d.get('oauthAccount') or {}).get('emailAddress'),u))\nb=max(c) if c else None\nprint(json.dumps({'email':(b[1] if b else None),'u':(b[2] if b else None)}))\""
     DispatchQueue.global(qos: .utility).async {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        var args = ["-o", "ConnectTimeout=\(Conf.shared["claudeCode"]?.int("sshConnectTimeout", 6) ?? 6)",
+        var args = ["-o", "ConnectTimeout=\(Conf.shared["claudeCode"]?.int("sshConnectTimeout", 10) ?? 10)",
                     "-o", "BatchMode=yes"]
         // 连接复用：同一 host 的后续轮询走常驻 master，跳板/握手开销归零
         if Conf.shared["claudeCode"]?.bool("sshMultiplexing", true) ?? true {
@@ -699,7 +767,8 @@ func fetchClaudeCodeService(server: Conf, done: @escaping (ExtraService?) -> Voi
         let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         guard p.terminationStatus == 0,
               let obj = (try? JSONSerialization.jsonObject(with: Data(out.utf8))) as? [String: Any] else {
-            DispatchQueue.main.async { done(ExtraService(name: "CC \(label)", value: "❌", detail: L("SSH 失败（网络/跳板?）", "SSH failed"), usedPercent: nil)) }
+            let row = ccCachedRow(label) ?? ExtraService(name: "CC \(label)", value: "❌", detail: L("SSH 失败（网络/跳板?）", "SSH failed"), usedPercent: nil)
+            DispatchQueue.main.async { done(row) }
             return
         }
         let isoFrac = ISO8601DateFormatter(); isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -732,7 +801,9 @@ func fetchClaudeCodeService(server: Conf, done: @escaping (ExtraService?) -> Voi
                 stale: stale > 86400
             )
         }
-        let result = build() ?? ExtraService(name: "CC \(label)", value: "—", detail: L("尚无使用缓存", "no usage cache yet"), usedPercent: nil)
+        let built = build()
+        if let r = built { ccLastGoodWrite(label, r) }
+        let result = built ?? ExtraService(name: "CC \(label)", value: "—", detail: L("尚无使用缓存", "no usage cache yet"), usedPercent: nil)
         DispatchQueue.main.async { done(result) }
     }
 }
@@ -1043,7 +1114,7 @@ struct EdgeStrip: View {
 
     struct StripItem { let name: String; let used: Int?; let logo: String?; let badge: Int? }
 
-    /// 名称 → 品牌图标 id（logos/ 目录下的同名 .svg/.png）；nil=智谱卡等走首字块
+    /// 名称 → 品牌图标 id（logos/ 目录下的同名 .svg/.png）；nil=无品牌图走首字块
     static func logoID(for name: String) -> String? {
         if name.hasPrefix("Codex") { return "openai" }
         if name.hasPrefix("CC ") { return "claude" }
@@ -1055,7 +1126,7 @@ struct EdgeStrip: View {
     private var items: [StripItem] {
         var raw: [(String, Int?, String?)] = []
         for k in store.visibleKeys {
-            raw.append((k.name, k.quota.map { min(max($0.maxPercentage, 0), 100) }, nil))
+            raw.append((k.name, k.quota.map { min(max($0.maxPercentage, 0), 100) }, "zhipu"))
         }
         for s in store.extras {
             if let u = s.usedPercent { raw.append((s.name, min(u, 100), EdgeStrip.logoID(for: s.name))) }
@@ -1092,7 +1163,7 @@ struct EdgeStrip: View {
         return img
     }
 
-    /// 识别块：品牌 logo（找不到文件时回退首字块）；智谱卡一律首字块（周/新/月…）
+    /// 识别块：品牌 logo（文件缺失/加载失败回退首字块）；智谱多卡同 logo 靠 ①② 角标区分
     @ViewBuilder
     private func ident(_ it: StripItem) -> some View {
         if let lid = it.logo, let img = EdgeStrip.logoImage(lid) {
@@ -1311,6 +1382,7 @@ if ProcessInfo.processInfo.environment["QUOTADOCK_RENDER"] == "1" {
     store.extras = [
         ExtraService(name: "Codex Pro", value: "41%", detail: "周窗口 · 重置 5天21小时后", usedPercent: 41),
         ExtraService(name: "Kimi", value: "Allegretto", detail: "子瞻 · 已连接 · 无余额接口", usedPercent: nil),
+        ExtraService(name: "MiMo", value: "更新 15:12", detail: "已用 63% · 剩余 37% · 重置 2026-10-13 · MiMo 进阶", usedPercent: 63),
         ExtraService(name: "CC racknerd", value: "更新 11:31", detail: "5h 37% · 周 5%", usedPercent: 37,
                      fiveBar: mk(37, 240), weekBar: mk(5, 7 * 1440)),
         ExtraService(name: "CC racknerd2", value: "⚠ 停更于 10/9 15:26", detail: "5h 6% · 周 1%", usedPercent: 6,
