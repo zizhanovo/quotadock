@@ -22,7 +22,6 @@ private func renderSnapshotAndExit() {
     }
     let dark = ProcessInfo.processInfo.environment["QUOTADOCK_DARK"] == "1"
     if ProcessInfo.processInfo.environment["QUOTADOCK_SETTINGS"] == "1" {
-        // 设置窗口离屏渲染（视觉回归用）
         let host = NSHostingView(rootView: AnyView(SettingsView(store: store)))
         host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         host.frame = NSRect(origin: .zero, size: NSSize(width: 560, height: 600))
@@ -42,7 +41,17 @@ private func renderSnapshotAndExit() {
         try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["QUOTADOCK_OUT"] ?? "/tmp/quotadock-settings.png"))
         exit(0)
     }
-    let root = AnyView(PanelRootView(store: store, initiallyCollapsed: ProcessInfo.processInfo.environment["QUOTADOCK_STRIP"] == "1"))
+    var root = AnyView(PanelRootView(store: store, initiallyCollapsed: ProcessInfo.processInfo.environment["QUOTADOCK_STRIP"] == "1"))
+    // 悬停快捷条离屏渲染（QUOTADOCK_HOVER=1）：按真实 overlay 几何叠在面板底部
+    if ProcessInfo.processInfo.environment["QUOTADOCK_HOVER"] == "1" {
+        let dashboard = AnyView(PanelRootView(store: store))
+        root = AnyView(
+            ZStack(alignment: .bottom) {
+                dashboard
+                HoverControls(store: store, onCollapse: {})
+            }
+        )
+    }
     let host = NSHostingView(rootView: root)
     host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     // 先用任意高度布局一次，等 SwiftUI 完成布局后再量真实尺寸
