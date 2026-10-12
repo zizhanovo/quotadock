@@ -9,26 +9,13 @@ import QuotaDockCore
 private func renderSnapshotAndExit() {
     _ = NSApplication.shared
     let store = Store()
-    let mk = { (p5: Int, pw: Int) in LimitEntry(percentage: p5, usage: nil, currentValue: nil, nextResetTime: Date().timeIntervalSince1970 * 1000 + Double(pw) * 60_000) }
-    store.keyQuotas = [
-        KeyQuota(identityKey: "zp:provider:bigmodel-api-2#J7Fk", name: "周卡", keyTail: "J7Fk",
-                 quota: QuotaData(fiveHour: mk(45, 288), weekly: mk(1, 7 * 1440),
-                                  tools: LimitEntry(percentage: 1, usage: 4000, currentValue: 9,
-                                                    nextResetTime: Date().timeIntervalSince1970 * 1000 + 30 * 1440 * 60_000),
-                                  level: "max"), error: nil),
-        KeyQuota(identityKey: "zp:provider:bigmodel-api#PbJy", name: "新卡", keyTail: "PbJy",
-                 quota: QuotaData(fiveHour: mk(11, 115), weekly: mk(3, 4 * 1440), tools: nil, level: "max"), error: nil),
-    ]
-    store.extras = [
-        ExtraService(id: "codex:default", name: "Codex Pro", value: "41%", detail: "周窗口 · 重置 5天21小时后", usedPercent: 41),
-        ExtraService(id: "kimi:default", name: "Kimi", value: "Allegretto", detail: "子瞻 · 已连接 · 无余额接口", usedPercent: nil),
-        ExtraService(id: "mimo:default", name: "MiMo", value: "更新 15:12", detail: "已用 63% · 剩余 37% · 重置 2026-10-13 · MiMo 进阶", usedPercent: 63),
-        ExtraService(id: "cc:racknerd", name: "CC racknerd", value: "更新 11:31", detail: "5h 37% · 周 5%", usedPercent: 37,
-                     fiveBar: mk(37, 240), weekBar: mk(5, 7 * 1440)),
-        ExtraService(id: "cc:racknerd2", name: "CC racknerd2", value: "⚠ 停更于 10/9 15:26", detail: "5h 6% · 周 1%", usedPercent: 6,
-                     fiveBar: mk(6, 180), weekBar: mk(1, 3 * 1440), stale: true),
-    ]
-    store.lastUpdate = Date()
+    if ProcessInfo.processInfo.environment["QUOTADOCK_STATE"] != "empty" {
+        seedRenderFixtures(store)
+    } else {
+        store.keyQuotas = []
+        store.extras = []
+        store.lastError = L("未发现任何额度来源，检查各服务配置", "no quota sources found; check service configs")
+    }
     if ProcessInfo.processInfo.environment["QUOTADOCK_STRIP"] == "1" {
         store.stripMode = true
         if let e = ProcessInfo.processInfo.environment["QUOTADOCK_EDGE"], let edge = DockEdge(rawValue: e) { store.stripEdge = edge }
@@ -56,6 +43,31 @@ private func renderSnapshotAndExit() {
     NSGraphicsContext.restoreGraphicsState()
     try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["QUOTADOCK_OUT"] ?? "/tmp/quotadock-panel.png"))
     exit(0)
+}
+
+@MainActor
+private func seedRenderFixtures(_ store: Store) {
+    let mk = { (p5: Int, pw: Int) in LimitEntry(percentage: p5, usage: nil, currentValue: nil, nextResetTime: Date().timeIntervalSince1970 * 1000 + Double(pw) * 60_000) }
+    store.keyQuotas = [
+        KeyQuota(identityKey: "zp:provider:bigmodel-api-2#J7Fk", name: "周卡", keyTail: "J7Fk",
+                 quota: QuotaData(fiveHour: mk(45, 288), weekly: mk(1, 7 * 1440),
+                                  tools: LimitEntry(percentage: 1, usage: 4000, currentValue: 9,
+                                                    nextResetTime: Date().timeIntervalSince1970 * 1000 + 30 * 1440 * 60_000),
+                                  level: "max"), error: nil, lastGoodAt: Date().addingTimeInterval(-120)),
+        KeyQuota(identityKey: "zp:provider:bigmodel-api#PbJy", name: "新卡", keyTail: "PbJy",
+                 quota: QuotaData(fiveHour: mk(11, 115), weekly: mk(3, 4 * 1440), tools: nil, level: "max"),
+                 error: nil, lastGoodAt: Date().addingTimeInterval(-120)),
+    ]
+    store.extras = [
+        ExtraService(id: "codex:default", name: "Codex Pro", value: "41%", detail: "周窗口 · 重置 5天21小时后", usedPercent: 41),
+        ExtraService(id: "kimi:default", name: "Kimi", value: "Allegretto", detail: "子瞻 · 已连接 · 无余额接口", usedPercent: nil),
+        ExtraService(id: "mimo:default", name: "MiMo", value: "更新 15:12", detail: "已用 63% · 剩余 37% · 重置 2026-10-13 · MiMo 进阶", usedPercent: 63),
+        ExtraService(id: "cc:racknerd", name: "CC racknerd", value: "更新 11:31", detail: "5h 37% · 周 5%", usedPercent: 37,
+                     fiveBar: mk(37, 240), weekBar: mk(5, 7 * 1440)),
+        ExtraService(id: "cc:racknerd2", name: "CC racknerd2", value: "⚠ 停更于 10/9 15:26", detail: "5h 6% · 周 1%", usedPercent: 6,
+                     fiveBar: mk(6, 180), weekBar: mk(1, 3 * 1440), stale: true),
+    ]
+    store.lastUpdate = Date().addingTimeInterval(-120)
 }
 
 @MainActor

@@ -24,6 +24,15 @@ struct KeyQuota: Identifiable {
     let keyTail: String       // key 后4位
     var quota: QuotaData?
     var error: String?
+    var lastGoodAt: Date?     // 最近成功时间（摘要/缓存标注）
+}
+
+/// 设置区"来源状态"行
+struct SourceLine: Identifiable {
+    let id: String
+    let name: String
+    let state: String       // 正常 / 缓存 HH:mm / 凭据失效 / 未配置 / 停用
+    let ok: Bool            // true=绿点 false=灰/橙点
 }
 
 /// 面板状态：把 RefreshCoordinator 的 outcomes 映射为现有视图直接消费的行，
@@ -49,9 +58,6 @@ final class Store: ObservableObject {
     }
     @Published var stripMode = false                 // 收起态=吸边细条
     @Published var stripEdge: DockEdge
-
-    /// 摘要卡直接消费的"最紧张项"
-    @Published private(set) var worst: (name: String, used: Int?, status: String)?
 
     init(sources: [QuotaSource]? = nil,
          config: ConfigurationStore = .shared,
@@ -110,28 +116,68 @@ final class Store: ObservableObject {
         extras = services.sorted { ($0.usedPercent ?? -1) > ($1.usedPercent ?? -1) }
         lastUpdate = latest
 
-        // 摘要：全部行里最紧张的
-        var worstKey: (String, Int?)? {
-            visibleKeys.compactMap { kq in
-                kq.quota.map { (kq.name, $0.maxPercentage) } ?? nil
-            }.max { ($0.1 ?? -1) < ($1.1 ?? -1) }
-        }
-        var worstExtra: (String, Int?)? {
-            extras.compactMap { s in s.usedPercent.map { (s.name, $0) } }
-                .max { ($0.1 ?? -1) < ($1.1 ?? -1) }
-        }
-        if let k = worstKey, let e = worstExtra {
-            worst = (k.1 ?? -1) >= (e.1 ?? -1) ? (k.0, k.1, "") : (e.0, e.1, "")
-        } else {
-            worst = worstKey.map { ($0.0, $0.1, "") } ?? worstExtra.map { ($0.0, $0.1, "") }
-        }
-
         if keys.isEmpty, services.isEmpty {
             lastError = L("未发现任何额度来源，检查各服务配置", "no quota sources found; check service configs")
         } else {
             lastError = nil
         }
         scheduleAutoPing()
+    }
+
+    // MARK: 摘要（响应显示勾选/自动切换的即时变化，故为计算属性）
+
+    /// 全部可见行里最紧张的一项；无有效数据时为 nil（摘要卡转引导态）
+    var summary: SummaryInfo? {
+        var best: (name: String, used: Int, reset: Double?, at: Date?)?
+        for kq in visibleKeys {
+            guard let q = kq.quota else { continue }
+            let used = q.maxPercentage
+            if best == nil || used > best!.used {
+                let reset = [q.fiveHour?.nextResetTime, q.weekly?.nextResetTime]
+                    .compactMap { $0 }.filter { $0 > Date().timeIntervalSince1970 * 1000 }.min()
+                best = (kq.name, used, reset, kq.lastGoodAt)
+            }
+        }
+        for s in extras {
+            guard let used = s.usedPercent else { continue }
+            if best == nil || used > best!.used {
+                let reset = [s.fiveBar?.nextResetTime, s.weekBar?.nextResetTime]
+                    .compactMap { $0 }.filter { $0 > Date().timeIntervalSince1970 * 1000 }.min()
+                best = (s.name, used, reset, nil)
+            }
+        }
+        guard let b = best else { return nil }
+        return SummaryInfo(name: b.name, usedPercent: b.used, nearestResetMs: b.reset, observedAt: b.at)
+    }
+
+    /// 设置区"来源状态"：每个数据源一颗状态点
+    var sourceLines: [SourceLine] {
+        let cfg = ConfigurationStore.shared.currentSnapshot()
+        let outcomes = coordinator.outcomes
+        var lines: [SourceLine] = []
+        let names: [SourceID: String] = [.zhipu: "智谱", .codex: "Codex", .kimi: "Kimi",
+                                         .mimo: "MiMo", .claudeCode: "Claude Code"]
+        for src in SourceID.allCases {
+            let enabled = src == .zhipu ? true : (cfg[src.rawValue]?.bool("enabled", true) ?? true)
+            let relevant = outcomes.values.filter { $0.identity.source == src }
+            if !enabled {
+                lines.append(SourceLine(id: src.rawValue, name: names[src] ?? src.rawValue, state: L("停用", "off"), ok: false))
+            } else if relevant.isEmpty {
+                lines.append(SourceLine(id: src.rawValue, name: names[src] ?? src.rawValue, state: L("未配置", "not set"), ok: false))
+            } else if relevant.allSatisfy({ $0.status == .success }) {
+                lines.append(SourceLine(id: src.rawValue, name: names[src] ?? src.rawValue,
+                                        state: L("正常", "ok"), ok: true))
+            } else if relevant.contains(where: { if case .unauthorized = $0.status { return true }; return false }) {
+                lines.append(SourceLine(id: src.rawValue, name: names[src] ?? src.rawValue,
+                                        state: L("凭据失效", "invalid"), ok: false))
+            } else {
+                let at = relevant.compactMap { $0.lastGoodAt }.max()
+                let when = at.map { Fmt.bjTime.string(from: $0) } ?? "--"
+                lines.append(SourceLine(id: src.rawValue, name: names[src] ?? src.rawValue,
+                                        state: L("缓存 ", "cached ") + when, ok: false))
+            }
+        }
+        return lines
     }
 
     /// 智谱 outcome → KeyQuota（快照含 5h/周 LimitEntry 与 level）
@@ -149,7 +195,7 @@ final class Store: ObservableObject {
                                                 language: ConfigurationStore.shared.language)
         }
         return KeyQuota(identityKey: outcome.identity.key, name: outcome.displayName,
-                        keyTail: tail, quota: quota, error: error)
+                        keyTail: tail, quota: quota, error: error, lastGoodAt: outcome.lastGoodAt)
     }
 
     /// 其他服务 outcome → ExtraService
@@ -230,12 +276,12 @@ final class Store: ObservableObject {
         selectedTails = sel
     }
 
-    /// 吸边条要显示的 key（按勾选过滤；autoOnly 时只留用量最高的）
+    /// 吸边条/列表要显示的 key（按勾选过滤；autoOnly 时只留用量最高的；默认按紧张度降序）
     var visibleKeys: [KeyQuota] {
         let visible = keyQuotas.filter { isSelected($0) }
-        guard autoOnly, !visible.isEmpty else { return visible }
-        let worst = visible.max { ($0.quota?.maxPercentage ?? -1) < ($1.quota?.maxPercentage ?? -1) }
-        return worst.map { [$0] } ?? []
+        let sorted = visible.sorted { ($0.quota?.maxPercentage ?? -1) > ($1.quota?.maxPercentage ?? -1) }
+        guard autoOnly, !sorted.isEmpty else { return sorted }
+        return [sorted[0]]
     }
 
     // MARK: 个人套餐自动敲窗（5h 用量≈0 时跑配置命令起算窗口；默认关闭）

@@ -116,6 +116,7 @@ struct EdgeStrip: View {
 
     var body: some View {
         let horizontal = (store.stripEdge == .top || store.stripEdge == .bottom)
+        // 全部可见项合并后按紧张度统一降序（key 行 + 服务行不再各自为序）
         let list = items.sorted { ($0.used ?? -1) > ($1.used ?? -1) }
         let tip = list.map { it in it.name + (it.used.map { " \($0)%" } ?? " " + L("无数据", "no data")) }.joined(separator: " · ")
             + L(" · 点击展开仪表盘 · 拖到别的边可换吸", " · click to expand · drag to another edge")
