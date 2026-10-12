@@ -17,11 +17,17 @@ struct WindowDragModifier: ViewModifier {
                 // 直接用鼠标全局坐标减去按下时的偏移来定位窗口
                 .onChanged { _ in
                     guard let w = NSApp.windows.first(where: { $0 is NSPanel }) else { return }
-                    let mouse = NSEvent.mouseLocation
                     if startOrigin == nil {
+                        // 拖动=主动交互：抑制悬停展开判定，展开态拖动则固定展开
+                        if let del = NSApp.delegate as? AppDelegate {
+                            del.store.userDragging = true
+                            if !del.store.stripMode { del.store.pinnedOpen = true }
+                        }
                         startOrigin = w.frame.origin
-                        cursorOffset = NSPoint(x: mouse.x - startOrigin!.x, y: mouse.y - startOrigin!.y)
+                        cursorOffset = NSPoint(x: NSEvent.mouseLocation.x - startOrigin!.x,
+                                               y: NSEvent.mouseLocation.y - startOrigin!.y)
                     }
+                    let mouse = NSEvent.mouseLocation
                     var f = w.frame
                     f.origin.x = mouse.x - cursorOffset.x
                     f.origin.y = mouse.y - cursorOffset.y
@@ -42,6 +48,7 @@ struct WindowDragModifier: ViewModifier {
                             UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: "panelFrame")
                         }
                     }
+                    (NSApp.delegate as? AppDelegate)?.store.userDragging = false
                     startOrigin = nil
                 }
         )

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 import QuotaDockCore
 
@@ -62,6 +63,11 @@ final class Store: ObservableObject {
     }
     @Published var stripMode = false                 // 收起态=吸边细条
     @Published var stripEdge: DockEdge
+
+    // 悬停展开/自动收纳的交互状态（详见 PanelRootView）
+    @Published var pinnedOpen = false                // 点击展开/拖动/开设置 → 固定展开，不自动收
+    var userDragging = false                         // 拖动进行中（抑制悬停展开，仅主线程写）
+    var pendingExpandAnchor: (edge: DockEdge, point: NSPoint)?  // 展开时面板锚定吸边条原位
 
     init(sources: [QuotaSource]? = nil,
          config: ConfigurationStore = .shared,

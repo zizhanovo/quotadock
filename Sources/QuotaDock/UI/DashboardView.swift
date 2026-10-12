@@ -9,6 +9,7 @@ struct MiniDashboardView: View {
     @ObservedObject var store: Store
     var onCollapse: (() -> Void)? = nil
     var onOpenSettings: (() -> Void)? = nil
+    var onHoverChange: ((Bool) -> Void)? = nil   // 悬停状态回调（自动收纳调度用）
     @State private var hovering = false
 
     var body: some View {
@@ -21,7 +22,10 @@ struct MiniDashboardView: View {
                 }
                 Spacer()
                 if let onOpenSettings {
-                    Button { onOpenSettings() } label: {
+                    Button {
+                        store.pinnedOpen = true   // 开设置=要持续交互，固定展开防自动收纳
+                        onOpenSettings()
+                    } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: DT.Size.value, weight: .medium))
                             .frame(minWidth: DT.minHitSize - 6, minHeight: DT.minHitSize - 6)
@@ -66,7 +70,7 @@ struct MiniDashboardView: View {
                     .transition(.opacity)
             }
         }
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0; onHoverChange?($0) }
         .animation(.easeInOut(duration: 0.15), value: hovering)
         .windowDrag()
     }

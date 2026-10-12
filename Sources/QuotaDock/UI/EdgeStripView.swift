@@ -7,7 +7,9 @@ import QuotaDockCore
 /// 点击恢复仪表盘，按住拖到别的边松手换边换方向。
 struct EdgeStrip: View {
     @ObservedObject var store: Store
-    let onTap: () -> Void
+    let onTap: () -> Void          // 点击：固定展开
+    var onHoverDwell: (() -> Void)? = nil   // 悬停驻留 ~0.35s：临时展开预览
+    @State private var dwellTask: Task<Void, Never>?
 
     struct StripItem: Identifiable {
         let id: String
@@ -102,6 +104,17 @@ struct EdgeStrip: View {
         .overlay(Capsule().stroke(Color.primary.opacity(0.12)))
         .contentShape(Capsule())
         .onTapGesture { onTap() }
+        .onHover { hovering in
+            dwellTask?.cancel()
+            // 驻留判定：悬停 0.35s 仍在其上才展开（扫过屏幕边缘不误触）；拖动条时不触发
+            if hovering, onHoverDwell != nil, !store.userDragging {
+                dwellTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    guard !Task.isCancelled, !store.userDragging else { return }
+                    onHoverDwell?()
+                }
+            }
+        }
         .windowDrag()
         .help(tip)
         .accessibilityLabel(L("QuotaDock 吸边条", "QuotaDock edge strip"))
