@@ -112,7 +112,14 @@ Claude Code 把用量缓存在服务器 `~/.claude.json` 的 `cachedUsageUtiliza
 ./mimo-usage-sync    # 本地只读 SSO，写 ~/.cache/quotadock/mimo-usage.json
 ```
 
-助手从 MiMo Desktop 本机 cookie 取 `passToken`，走 `sid=mimopc` 换 `serviceToken` 后只读拉取用量/订阅，**不上报任何第三方**。QuotaDock 只读缓存文件；可用 launchd/cron 定时跑助手，或在 QuotaDock 手动刷新前先跑一次。
+助手从 MiMo Desktop 本机 cookie 取 `passToken`，走 `sid=mimopc` 换 `serviceToken` 后只读拉取用量/订阅，**不上报任何第三方**。QuotaDock 只读缓存文件——缓存不刷新数据就停在你最后一次跑助手的时刻，**建议装个定时器**（每 30 分钟）：
+
+```bash
+sed "s#__BIN__#$PWD/mimo-usage-sync#" scripts/mimo-sync.plist.template > ~/Library/LaunchAgents/local.quotadock.mimo-sync.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.quotadock.mimo-sync.plist
+```
+
+需要 MiMo Desktop 处于登录状态（cookie 新鲜）；数据停更超 24h 面板会标 ⚠ 橙色提醒。
 
 ## 开发
 
