@@ -88,9 +88,10 @@ public struct ClaudeCodeSource: QuotaSource {
         return SourceResult(identity: identity, snapshot: snapshot, status: .success, observedAt: fetched)
     }
 
-    /// 远端命令构建（纯函数可测）。user/paths 经白名单校验后单引号包裹。
+    /// 远端命令构建（纯函数可测）。user/paths 经白名单校验后单引号包裹；
+    /// paths 兼容字符串数组与 [{path:}] 字典数组两种配置形态。
     static func buildRemoteCommand(server: ConfigSection, refreshUsage: Bool) throws -> String {
-        var paths = server.list("paths").map { $0.str("path") }.filter { !$0.isEmpty }
+        var paths = server.strList("paths").filter { !$0.isEmpty }
         if paths.isEmpty { paths = ["/home/claude/.claude.json", "/root/.claude.json"] }
         let pyPaths = try paths.map { try ShellSafety.singleQuoted($0) }.joined(separator: ",")
         var prelude = ""

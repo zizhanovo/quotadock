@@ -1,6 +1,5 @@
 import Foundation
-
-// MARK: - 配置：section 包装、校验、热加载
+import CryptoKit
 
 /// 配置节（原 Conf）。只读包装，展开 ~ 路径，提供类型化取值与默认值。
 public struct ConfigSection {
@@ -21,6 +20,14 @@ public struct ConfigSection {
     public func strDict(_ k: String) -> [String: String] {
         guard let obj = d[k] as? [String: Any] else { return [:] }
         return obj.compactMapValues { $0 as? String }
+    }
+    /// 字符串数组；兼容 [{path: "..."}] 字典形态（取其 path/字符串字段）
+    public func strList(_ k: String) -> [String] {
+        if let arr = d[k] as? [String] { return arr }
+        if let arr = d[k] as? [[String: Any]] {
+            return arr.compactMap { ($0["path"] as? String) ?? ($0["value"] as? String) }
+        }
+        return []
     }
     /// 展开 ~ 的路径配置
     public func path(_ k: String, _ def: String = "") -> String {
@@ -148,9 +155,18 @@ public struct AppConfiguration {
                     found.append(ConfigIssue("claudeCode.servers[\(i)].user", "user \"\(user.prefix(40))\" 不是合法系统用户名", "如 claude；留空=SSH 登录用户"))
                     s["user"] = ""
                 }
-                if let paths = s["paths"] as? [String] {
-                    let ok = paths.filter { ShellSafety.isSafeRemotePath($0) }
-                    if ok.count != paths.count {
+                // paths 兼容字符串数组与 [{path:}] 字典数组两种形态，统一清洗后存回字符串数组
+                let rawPaths: [String]
+                if let arr = s["paths"] as? [String] {
+                    rawPaths = arr
+                } else if let arr = s["paths"] as? [[String: Any]] {
+                    rawPaths = arr.compactMap { $0["path"] as? String }
+                } else {
+                    rawPaths = []
+                }
+                if !rawPaths.isEmpty {
+                    let ok = rawPaths.filter { ShellSafety.isSafeRemotePath($0) }
+                    if ok.count != rawPaths.count {
                         found.append(ConfigIssue("claudeCode.servers[\(i)].paths", "路径含不允许字符（会被拼进远端命令）", "绝对路径，仅字母数字 . _ - /"))
                         s["paths"] = ok.isEmpty ? nil : ok
                     }
@@ -182,7 +198,6 @@ public final class ConfigurationStore {
     private let queue = DispatchQueue(label: "quotadock.config")
     private(set) var current: AppConfiguration
     private var lastContentHash: String
-    private var lastMTime: Date?
     private var watchTimer: Timer?
     public let configPath: URL
 
@@ -201,8 +216,7 @@ public final class ConfigurationStore {
         configPath = path ?? ConfigurationStore.defaultPath()
         let loaded = ConfigurationStore.loadFile(configPath)
         current = AppConfiguration(root: loaded.root, revision: 0)
-        lastContentHash = ConfigurationStore.hash(loaded.root)
-        lastMTime = loaded.mtime
+        lastContentHash = loaded.rawHash
         fileIssues = loaded.issues
     }
 
@@ -214,43 +228,40 @@ public final class ConfigurationStore {
             .appendingPathComponent(".config/quotadock/config.json")
     }
 
-    static func loadFile(_ url: URL) -> (root: [String: Any], issues: [ConfigIssue], mtime: Date?) {
-        guard let data = try? Data(contentsOf: url) else { return ([:], [], nil) }
-        let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return ([:], [ConfigIssue(url.lastPathComponent, "JSON 解析失败", "对照 config.example.json 检查逗号/引号")], mtime)
+    static func loadFile(_ url: URL) -> (root: [String: Any], issues: [ConfigIssue], rawHash: String) {
+        func hash(_ data: Data) -> String {
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         }
-        return (obj, [], mtime)
+        guard let data = try? Data(contentsOf: url) else { return ([:], [], "") }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ([:], [ConfigIssue(url.lastPathComponent, "JSON 解析失败", "对照 config.example.json 检查逗号/引号")], hash(data))
+        }
+        return (obj, [], hash(data))
     }
 
-    private static func hash(_ obj: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return "" }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    /// 重新读取并应用（mtime 或内容变化时）。返回是否发生了有效替换。
-    /// 整文件无效 → 保留旧配置 + 记录 fileIssues。
+    /// 重新读取并应用（文件内容变化时）。返回是否发生了有效替换。
+    /// 用内容哈希而不是 mtime：编辑器的原子替换保存对 mtime 不可靠（APFS 上 setAttributes 也会被吞），
+    /// 配置文件很小，每 5s 读一次做哈希的代价可忽略。
+    /// 整文件无效（缺失/JSON 解析失败）保留上一份有效配置并暴露问题。
     @discardableResult
     public func reloadIfChanged() -> Bool {
         var applied = false
+        var changed = false
         queue.sync {
-            let mtime = (try? configPath.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            guard mtime != lastMTime else { return }
-            lastMTime = mtime
             let loaded = ConfigurationStore.loadFile(configPath)
+            guard loaded.rawHash != lastContentHash else { return }
+            lastContentHash = loaded.rawHash
+            changed = true
             guard loaded.issues.isEmpty else {
                 fileIssues = loaded.issues   // 保留上一份有效配置
                 return
             }
-            let h = ConfigurationStore.hash(loaded.root)
-            guard h != lastContentHash else { return }
-            lastContentHash = h
             fileIssues = []
             let previous = current
             current = AppConfiguration(root: loaded.root, revision: previous.revision + 1)
             applied = true
         }
-        if applied, Thread.isMainThread {
+        if applied, changed, Thread.isMainThread {
             onChange?(currentSnapshot())
         }
         return applied
