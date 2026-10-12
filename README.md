@@ -45,7 +45,7 @@ rm -rf <clone 目录>
 
 ## 配置
 
-配置文件：`~/.config/quotadock/config.json`（不存在则全部用内置默认值；模板见 [`config.example.json`](config.example.json)，路径可用 `QUOTADOCK_CONFIG` 环境变量覆盖）。改完等下一轮刷新（默认 3 分钟）即生效。
+配置文件：`~/.config/quotadock/config.json`（不存在则全部用内置默认值；模板见 [`config.example.json`](config.example.json)，路径可用 `QUOTADOCK_CONFIG` 环境变量覆盖）。**修改配置后需重启 QuotaDock 生效**（v1 启动时读取一次；自动热加载在 v2 计划中）。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|

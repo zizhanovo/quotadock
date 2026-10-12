@@ -445,10 +445,17 @@ final class Store: ObservableObject {
                     // 网络抖动：保留旧数据不闪空
                     self.keyQuotas[index].error = L("网络错误", "network error") + ": \(error.localizedDescription)"
                 } else if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
-                    // 服务端明确拒绝（key 被关闭等）→ 清掉旧额度，显示已失效
-                    self.keyQuotas[index].quota = nil
-                    zhipuSkipAppend(k.tail)
-                    self.keyQuotas[index].error = L("已失效", "invalid") + " · HTTP \(http.statusCode)"
+                    // 只有 401/403 是服务端确认身份失效；429/5xx 是临时故障，
+                    // 保留旧数据、不写 skip，避免一次限流永久禁用有效 key
+                    if http.statusCode == 401 || http.statusCode == 403 {
+                        self.keyQuotas[index].quota = nil
+                        zhipuSkipAppend(k.tail)
+                        self.keyQuotas[index].error = L("已失效", "invalid") + " · HTTP \(http.statusCode)"
+                    } else if http.statusCode == 429 {
+                        self.keyQuotas[index].error = L("限流，稍后自动重试", "rate limited, will retry") + " · HTTP 429"
+                    } else {
+                        self.keyQuotas[index].error = L("服务端错误", "server error") + " · HTTP \(http.statusCode)"
+                    }
                 } else if let data = data, let q = parseQuota(data) {
                     self.keyQuotas[index].quota = q
                     self.keyQuotas[index].error = nil
@@ -456,14 +463,24 @@ final class Store: ObservableObject {
                     print("[\(self.stamp())] \(k.name)(…\(k.tail)) 刷新成功 5h=\(q.fiveHour.map { "\($0.percentage)%" } ?? "-") 周=\(q.weekly.map { "\($0.percentage)%" } ?? "-")")
                     fflush(stdout)
                 } else {
-                    // 200 但无额度数据（key 已关闭时返回 {"code":1000,"msg":"身份验证失败。"}）
-                    self.keyQuotas[index].quota = nil
+                    // 200 但无额度数据：仅当响应明确说"身份验证失败"（code 1000）才算确认失效；
+                    // 其余解析失败视为临时故障，保留旧数据、不写 skip
                     var msg = L("响应无效", "invalid response")
+                    var identityRejected = false
                     if let data,
-                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let m = obj["msg"] as? String { msg = m }
-                    zhipuSkipAppend(k.tail)
-                    self.keyQuotas[index].error = L("已失效", "invalid") + " · \(msg)"
+                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let m = obj["msg"] as? String { msg = m }
+                        if (obj["code"] as? NSNumber)?.intValue == 1000 || (msg as NSString).contains("身份验证") {
+                            identityRejected = true
+                        }
+                    }
+                    if identityRejected {
+                        self.keyQuotas[index].quota = nil
+                        zhipuSkipAppend(k.tail)
+                        self.keyQuotas[index].error = L("已失效", "invalid") + " · \(msg)"
+                    } else {
+                        self.keyQuotas[index].error = L("响应异常，保留上次数据", "bad response, kept last data") + " · \(msg)"
+                    }
                 }
             }
         }.resume()
