@@ -5,3 +5,5 @@ HANDOFF.md
 .DS_Store
 *.log
 .build/
+glm-ping
+dist/

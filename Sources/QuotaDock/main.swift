@@ -80,6 +80,11 @@ private func runApp() {
     app.run()
 }
 
+if CommandLine.arguments.contains("--version") {
+    print("QuotaDock \(QuotaVersion.current)")
+    exit(0)
+}
+
 if ProcessInfo.processInfo.environment["QUOTADOCK_RENDER"] == "1" {
     MainActor.assumeIsolated { renderSnapshotAndExit() }
 } else {

@@ -16,6 +16,7 @@
     "keys": [
       {
         "name": "my-key",
+        "id": "backup",
         "key": "xxxxxxxxxxxxxxxx.yyyyyyyy"
       }
     ]

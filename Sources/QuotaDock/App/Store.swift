@@ -121,7 +121,23 @@ final class Store: ObservableObject {
         } else {
             lastError = nil
         }
+        logRowsIfChanged(keys: keys, services: services)
         scheduleAutoPing()
+    }
+
+    /// 每轮一行摘要日志（launchd 排查用）；内容没变不重复打
+    private var lastLoggedSignature = ""
+
+    private func logRowsIfChanged(keys: [KeyQuota], services: [ExtraService]) {
+        let keyPart = keys.map { kq in
+            let pct = kq.quota.map { "\($0.maxPercentage)%" } ?? (kq.error.map { _ in "err" } ?? "-")
+            return "\(kq.name)(…\(kq.keyTail))=\(pct)"
+        }.joined(separator: " ")
+        let svcPart = services.map { "\($0.name)=\($0.value)" }.joined(separator: " ")
+        let signature = keyPart + " | " + svcPart
+        guard signature != lastLoggedSignature else { return }
+        lastLoggedSignature = signature
+        Log.info("面板: \(signature.isEmpty ? "（无数据）" : signature)")
     }
 
     // MARK: 摘要（响应显示勾选/自动切换的即时变化，故为计算属性）

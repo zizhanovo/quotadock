@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    name: build · test · bundle · render-smoke
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SwiftPM build
+        run: swift build
+
+      - name: Unit tests
+        run: swift test
+
+      - name: App bundle
+        run: ./build.sh
+
+      - name: Bundle metadata check
+        run: |
+          test -x QuotaDock.app/Contents/MacOS/QuotaDock
+          test -f QuotaDock.app/Contents/Info.plist
+          plutil -lint QuotaDock.app/Contents/Info.plist
+          VERSION=$(./QuotaDock.app/Contents/MacOS/QuotaDock --version)
+          echo "$VERSION"
+          case "$VERSION" in QuotaDock\ *[0-9].[0-9].[0-9]) ;; *) echo "bad --version output" >&2; exit 1;; esac
+
+      - name: Offscreen render smoke（亮/暗/空态/吸边条）
+        run: |
+          L="$PWD/logos"
+          QUOTADOCK_RENDER=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-light.png .build/debug/QuotaDock
+          QUOTADOCK_RENDER=1 QUOTADOCK_DARK=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-dark.png .build/debug/QuotaDock
+          QUOTADOCK_RENDER=1 QUOTADOCK_STATE=empty QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-empty.png .build/debug/QuotaDock
+          QUOTADOCK_RENDER=1 QUOTADOCK_STRIP=1 QUOTADOCK_LOGOS="$L" QUOTADOCK_OUT=render-strip.png .build/debug/QuotaDock
+          for f in render-light render-dark render-empty render-strip; do
+            test -s "$f.png"
+            sips -g pixelWidth -g pixelHeight "$f.png" | tee "$f.dim"
+          done
+          # 面板宽 256pt@2x=512px；空态应显著矮于满态
+          grep -q "pixelWidth: 512" render-light.dim
+          W_EMPTY=$(awk '/pixelWidth/{print $2}' render-empty.dim)
+          H_LIGHT=$(awk '/pixelHeight/{print $2}' render-light.dim)
+          H_EMPTY=$(awk '/pixelHeight/{print $2}' render-empty.dim)
+          test "$W_EMPTY" -eq 512 -a "$H_EMPTY" -lt "$H_LIGHT"
