@@ -338,7 +338,8 @@ final class Store: ObservableObject {
         return worst.map { [$0] } ?? []
     }
 
-    func refreshAll() {
+    /// force=true 时全部服务立即刷新（手动刷新按钮）；定时轮询走各服务独立节流
+    func refreshAll(force: Bool = false) {
         var keys = readAPIKeys()
         if !zhipuSkipTails().contains("individual"), let ind = zcodeIndividualKey() {
             if !keys.contains(where: { $0.tail == ind.tail }) {
@@ -373,15 +374,21 @@ final class Store: ObservableObject {
                 autoPingIfNeeded(personal: personal)
             }
         }
-        refreshExtras()
+        refreshExtras(force: force)
     }
 
-    /// 刷新其他服务（Codex / Kimi / MiMo / Claude Code VPS，均可 config 开关）
-    private func refreshExtras() {
+    /// 各服务上次抓取完成时间（per-service 节流）
+    private var extraDue: [String: Date] = [:]
+
+    /// 刷新其他服务（Codex / Kimi / MiMo / Claude Code VPS）。
+    /// 每个服务有自己的 refreshIntervalSeconds（config），未到期的轮次直接跳过并保留上一轮的行；
+    /// 手动刷新(force)无视节流。CC 快照只在有人用时才变，默认 600s 足够，SSH/网络开销降 2/3。
+    private func refreshExtras(force: Bool = false) {
         let cfg = Conf.shared
         let group = DispatchGroup()
         let lock = NSLock()
         var results: [ExtraService] = []
+        var dispatched: [String] = []
         func add(_ fetch: (@escaping (ExtraService?) -> Void) -> Void) {
             group.enter()
             fetch { s in
@@ -389,16 +396,40 @@ final class Store: ObservableObject {
                 group.leave()
             }
         }
-        if cfg["codex"]?.bool("enabled", true) != false { add(fetchCodexService) }
-        if cfg["kimi"]?.bool("enabled", true) != false { add(fetchKimiService) }
-        if cfg["mimo"]?.bool("enabled", true) != false { add(fetchMiMoService) }
+        func due(_ key: String, _ interval: Int) -> Bool {
+            force || Date() >= (extraDue[key] ?? .distantPast).addingTimeInterval(TimeInterval(max(30, interval)))
+        }
+        if cfg["codex"]?.bool("enabled", true) != false,
+           due("codex", cfg["codex"]?.int("refreshIntervalSeconds", 180) ?? 180) {
+            dispatched.append("codex"); add(fetchCodexService)
+        }
+        if cfg["kimi"]?.bool("enabled", true) != false,
+           due("kimi", cfg["kimi"]?.int("refreshIntervalSeconds", 180) ?? 180) {
+            dispatched.append("kimi"); add(fetchKimiService)
+        }
+        if cfg["mimo"]?.bool("enabled", true) != false,
+           due("mimo", cfg["mimo"]?.int("refreshIntervalSeconds", 180) ?? 180) {
+            dispatched.append("mimo"); add(fetchMiMoService)
+        }
+        let ccInterval = cfg["claudeCode"]?.int("refreshIntervalSeconds", 600) ?? 600
         for srv in cfg["claudeCode"]?.list("servers") ?? [] {
-            add { fetchClaudeCodeService(server: srv, done: $0) }
+            let key = "cc." + srv.str("host")
+            if due(key, ccInterval) {
+                dispatched.append(key)
+                add { fetchClaudeCodeService(server: srv, done: $0) }
+            }
         }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
-            self.extras = results.sorted { ($0.usedPercent ?? -1) > ($1.usedPercent ?? -1) }
-            print("[\(self.stamp())] extras: " + self.extras.map { "\($0.name)=\($0.value) [\($0.detail)]" }.joined(separator: " | "))
+            for k in dispatched { self.extraDue[k] = Date() }
+            // 本轮没查的服务保留上一轮的行（节流时 UI 不掉行）
+            var merged = results
+            for old in self.extras where !merged.contains(where: { $0.name == old.name }) {
+                merged.append(old)
+            }
+            self.extras = merged.sorted { ($0.usedPercent ?? -1) > ($1.usedPercent ?? -1) }
+            let tag = dispatched.isEmpty ? "extras(skip)" : "extras(\(dispatched.joined(separator: ",")))"
+            print("[\(self.stamp())] \(tag): " + self.extras.map { "\($0.name)=\($0.value) [\($0.detail)]" }.joined(separator: " | "))
             fflush(stdout)
         }
     }
@@ -487,16 +518,30 @@ func fetchCodexService(done: @escaping (ExtraService?) -> Void) {
 
     DispatchQueue.global(qos: .utility).async {
         var lastStatus = 0
-        // 直连/代理交替重试，赌出口 IP 轮换；proxyPort 配 0 = 禁用代理路
+        // 直连/代理交替重试，赌出口 IP 轮换；proxyPort 配 0 = 禁用代理路。
+        // 失败间隙用 asyncAfter 调度，不 Thread.sleep 占线程。
         let ccfg = Conf.shared["codex"]
         let proxyHost = ccfg?.str("proxyHost", "127.0.0.1") ?? "127.0.0.1"
         let proxyPort = ccfg?.int("proxyPort", 6152) ?? 6152
         let retryGap = ccfg?.dbl("retryIntervalSeconds", 15) ?? 15
         let n = max(1, ccfg?.int("retries", 4) ?? 4)
         let sequence: [Bool] = (0..<n).map { proxyPort > 0 && $0 % 2 == 1 }
-        for (i, useProxy) in sequence.enumerated() {
+        let q = DispatchQueue.global(qos: .utility)
+        func finish() {
+            DispatchQueue.main.async {
+                if let g = codexLastGoodRead() {
+                    let f = DateFormatter()
+                    f.dateFormat = "HH:mm"
+                    done(ExtraService(name: g.name, value: g.value, detail: L("缓存 \(f.string(from: g.at))", "cached \(f.string(from: g.at))") + " · \(g.detail)", usedPercent: g.pct))
+                } else {
+                    done(ExtraService(name: "Codex", value: "❌", detail: L("获取失败", "fetch failed") + " HTTP \(lastStatus)", usedPercent: nil))
+                }
+            }
+        }
+        func attempt(_ i: Int) {
+            guard i < sequence.count else { finish(); return }
             let cfg = URLSessionConfiguration.ephemeral
-            cfg.connectionProxyDictionary = useProxy
+            cfg.connectionProxyDictionary = sequence[i]
                 ? ["HTTPSEnable": 1, "HTTPSProxy": proxyHost, "HTTPSPort": proxyPort,
                    "HTTPEnable": 1, "HTTPProxy": proxyHost, "HTTPPort": proxyPort]
                 : [:]
@@ -537,17 +582,10 @@ func fetchCodexService(done: @escaping (ExtraService?) -> Void) {
                 }
                 return
             }
-            if i < sequence.count - 1 { Thread.sleep(forTimeInterval: retryGap) } // 出口轮换是几十秒级，拉开重试间隔
+            // 出口轮换是几十秒级，拉开重试间隔（不占线程）
+            q.asyncAfter(deadline: .now() + retryGap) { attempt(i + 1) }
         }
-        DispatchQueue.main.async {
-            if let g = codexLastGoodRead() {
-                let f = DateFormatter()
-                f.dateFormat = "HH:mm"
-                done(ExtraService(name: g.name, value: g.value, detail: L("缓存 \(f.string(from: g.at))", "cached \(f.string(from: g.at))") + " · \(g.detail)", usedPercent: g.pct))
-            } else {
-                done(ExtraService(name: "Codex", value: "❌", detail: L("获取失败", "fetch failed") + " HTTP \(lastStatus)", usedPercent: nil))
-            }
-        }
+        attempt(0)
     }
 }
 
@@ -643,8 +681,13 @@ func fetchClaudeCodeService(server: Conf, done: @escaping (ExtraService?) -> Voi
     DispatchQueue.global(qos: .utility).async {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        p.arguments = ["-o", "ConnectTimeout=\(Conf.shared["claudeCode"]?.int("sshConnectTimeout", 6) ?? 6)",
-                       "-o", "BatchMode=yes"] + portArgs + [host, cmd]
+        var args = ["-o", "ConnectTimeout=\(Conf.shared["claudeCode"]?.int("sshConnectTimeout", 6) ?? 6)",
+                    "-o", "BatchMode=yes"]
+        // 连接复用：同一 host 的后续轮询走常驻 master，跳板/握手开销归零
+        if Conf.shared["claudeCode"]?.bool("sshMultiplexing", true) ?? true {
+            args += ["-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/quotadock-ssh-%C", "-o", "ControlPersist=1800"]
+        }
+        p.arguments = args + portArgs + [host, cmd]
         let outPipe = Pipe()
         p.standardOutput = outPipe
         p.standardError = Pipe()
@@ -833,7 +876,7 @@ struct MiniDashboardView: View {
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
                 Spacer()
-                Button { store.refreshAll() } label: {
+                Button { store.refreshAll(force: true) } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
                 }
                 .buttonStyle(.borderless)

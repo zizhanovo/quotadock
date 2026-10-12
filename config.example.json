@@ -2,13 +2,22 @@
   "language": "zh",
   "timezone": "Asia/Shanghai",
   "refreshIntervalSeconds": 180,
-  "thresholds": { "yellow": 60, "red": 85 },
+  "thresholds": {
+    "yellow": 60,
+    "red": 85
+  },
   "zhipu": {
     "providerConfigPath": "~/.zcode/v2/provider_config.json",
     "credentialsPath": "~/.zcode/v2/credentials.json",
-    "names": { "bigmodel-api-2": "周卡", "bigmodel-api": "新卡" },
+    "names": {
+      "bigmodel-api-2": "周卡",
+      "bigmodel-api": "新卡"
+    },
     "keys": [
-      { "name": "my-key", "key": "xxxxxxxxxxxxxxxx.yyyyyyyy" }
+      {
+        "name": "my-key",
+        "key": "xxxxxxxxxxxxxxxx.yyyyyyyy"
+      }
     ]
   },
   "codex": {
@@ -17,13 +26,18 @@
     "proxyHost": "127.0.0.1",
     "proxyPort": 6152,
     "retries": 4,
-    "retryIntervalSeconds": 15
+    "retryIntervalSeconds": 15,
+    "refreshIntervalSeconds": 180
   },
   "kimi": {
     "enabled": true,
-    "credentialsPath": "~/.kimi-code/credentials/kimi-code.json"
+    "credentialsPath": "~/.kimi-code/credentials/kimi-code.json",
+    "refreshIntervalSeconds": 180
   },
-  "mimo": { "enabled": true },
+  "mimo": {
+    "enabled": true,
+    "refreshIntervalSeconds": 180
+  },
   "claudeCode": {
     "sshConnectTimeout": 6,
     "servers": [
@@ -31,9 +45,17 @@
         "host": "my-vps",
         "name": "vps1",
         "sshPort": "",
-        "paths": ["/home/claude/.claude.json", "/root/.claude.json"]
+        "paths": [
+          "/home/claude/.claude.json",
+          "/root/.claude.json"
+        ]
       }
-    ]
+    ],
+    "refreshIntervalSeconds": 600,
+    "sshMultiplexing": true
   },
-  "autoPing": { "enabled": false, "command": "/opt/homebrew/bin/glm-ping" }
+  "autoPing": {
+    "enabled": false,
+    "command": "/opt/homebrew/bin/glm-ping"
+  }
 }

@@ -61,10 +61,13 @@ rm -rf <clone 目录>
 | `codex.authPath` | `~/.codex/auth.json` | Codex CLI OAuth 凭据 |
 | `codex.proxyHost` / `proxyPort` | `127.0.0.1` / `6152` | 代理重试路（Clash/Surge 常见端口）；`proxyPort: 0` 禁用 |
 | `codex.retries` / `retryIntervalSeconds` | `4` / `15` | 直连/代理交替重试策略 |
+| `codex` / `kimi` / `mimo` `.refreshIntervalSeconds` | `180` | 各服务独立刷新间隔（节流，未到期跳过并保留旧数据） |
 | `kimi.enabled` / `credentialsPath` | `true` / `~/.kimi-code/...` | Kimi CLI 凭据（token 15 分钟过期，跑一次 `kimi` CLI 自动续期） |
 | `mimo.enabled` | `true` | 当前为安全占位 |
 | `claudeCode.servers` | `[]` | 远程服务器列表：`{"host": "ssh别名", "name": "显示名", "sshPort": "", "paths": ["/home/claude/.claude.json", "/root/.claude.json"]}`；多路径取快照最新 |
 | `claudeCode.sshConnectTimeout` | `6` | SSH 连接超时秒数 |
+| `claudeCode.refreshIntervalSeconds` | `600` | CC 服务器刷新间隔（快照只在有人用时才变，默认放宽到 10 分钟） |
+| `claudeCode.sshMultiplexing` | `true` | SSH 连接复用（ControlMaster，跳板场景握手开销归零） |
 | `autoPing.enabled` / `command` | `false` | 个人套餐 5h 窗口自动敲活命令（见 `glm-ping.swift`） |
 
 凭据类文件（`auth.json`、`kimi-code.json`、SSH key）只在本机读取，QuotaDock 不向任何第三方发送。
@@ -84,6 +87,15 @@ QUOTADOCK_RENDER=1 QUOTADOCK_STRIP=1 QUOTADOCK_EDGE=top QUOTADOCK_LOGOS=$PWD/log
 ```
 
 运行日志：`/tmp/quotadock.out.log`。单文件架构、各数据源逆向结论和踩坑记录见源码注释。
+
+### 性能设计
+
+常驻开销：~40MB 内存、空闲 0% CPU（每 3 分钟一轮网络轮询）。在此之上：
+
+- **各服务独立刷新节流**：Claude Code 快照只在服务器有人用时才变化，默认 600s 才查一次（SSH 进程与握手开销降 2/3）；未到期的轮次跳过并保留上一轮数据，UI 不闪空
+- **SSH 连接复用**：ControlMaster/Persist（30 分钟），走跳板机的轮询从全握手降为毫秒级复用
+- **重试不占线程**：Codex 的直连/代理交替重试用 asyncAfter 调度，不 Thread.sleep 停线程
+- 手动点刷新按钮 = 全部服务强制立即刷新（无视节流）
 
 ## License
 
