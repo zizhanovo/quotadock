@@ -43,6 +43,19 @@
   "claudeCode": {
     "sshConnectTimeout": 6,
     "refreshUsage": true,
+    "local": {
+      "enabled": true,
+      "path": "~/.claude.json",
+      "refreshUsage": true,
+      "extraProfiles": [
+        {
+          "name": "et",
+          "path": "~/.claude-profiles/et/.claude.json",
+          "refreshUsage": true,
+          "claudePath": "~/.local/share/claude-et/versions/2.1.300"
+        }
+      ]
+    },
     "servers": [
       {
         "host": "my-vps",
@@ -57,6 +70,12 @@
     ],
     "refreshIntervalSeconds": 600,
     "sshMultiplexing": true
+  },
+  "magpie": {
+    "enabled": true,
+    "binPath": "",
+    "providers": ["cursor"],
+    "refreshIntervalSeconds": 180
   },
   "autoPing": {
     "enabled": false,

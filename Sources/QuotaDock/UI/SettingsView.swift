@@ -79,12 +79,24 @@ struct SettingsView: View {
             sourceCard("Claude Code（远程 VPS）", id: .claudeCode) {
                 Toggle(L("启用", "Enabled"), isOn: $model.ccEnabled)
                 Toggle(L("先在服务器跑 /usage 刷新缓存", "Run /usage on server first"), isOn: $model.ccRefreshUsage)
+                Toggle(L("本机 Claude Code（读 ~/.claude.json）", "Local Claude Code (reads ~/.claude.json)"),
+                       isOn: $model.ccLocalEnabled)
                 HStack {
                     Text(L("SSH 超时(s)", "SSH timeout(s)"))
                     TextField("", text: $model.ccTimeout).frame(width: 50)
                     Spacer()
                 }
                 ccServersEditor
+            }
+            sourceCard("Magpie（Cursor / Grok…）", id: .magpie) {
+                Toggle(L("启用", "Enabled"), isOn: $model.magpieEnabled)
+                pathField(L("magpie 路径（空=自动）", "magpie path (empty=auto)"), $model.magpieBinPath)
+                HStack {
+                    Text(L("providers（逗号分隔）", "providers (comma separated)"))
+                        .frame(width: 140, alignment: .leading)
+                        .font(.system(size: DT.Size.body))
+                    TextField("cursor, grok, zhipu-glm…", text: $model.magpieProviders)
+                }
             }
         }
     }

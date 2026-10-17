@@ -45,7 +45,7 @@ struct EdgeStrip: View {
         if let lid = it.logo, let img = BrandLogo.logoImage(lid) {
             ZStack(alignment: .bottomTrailing) {
                 Image(nsImage: img).resizable().renderingMode(.template)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandLogo.color(for: lid))
                     .frame(width: 12, height: 12)
                 if let b = it.badge {
                     Text("\(b)")

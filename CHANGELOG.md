@@ -2,6 +2,50 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 SemVer。
 
+## [未发布]
+
+### 新增
+
+- **Cursor 订阅渠道（magpie）**：跑 `magpie quota <provider> --json`（argv 直传不经 shell，
+  凭据留在 magpie，CLI 自带 1 分钟缓存）。**多 provider**：`magpie.providers` 列表
+  （兼容旧 `provider` 单值，默认 `["cursor"]`），每个 provider 一个独立身份——
+  cursor / grok (SuperGrok) / codex / zhipu-glm / kimi-code-cn / deepseek…，与原生渠道
+  重名的显示名带 (magpie) 后缀。窗口是各家自有口径（Cursor 4 窗口 / SuperGrok 7 天 /
+  智谱 5h+7d+MCP），聚合口径（Total）不参与主值，进度条放最紧张的两个窗口并下发窗口
+  短名（Other / Grok / 5h / 7d / MCP…）作为条标签。`magpie.binPath` 显式路径（默认按
+  常见安装位自动寻找，launchd 环境无用户 PATH）、`magpie.enabled` 开关。
+- 设置页新增 "Magpie（Cursor / Grok…）" 来源卡片（启用开关 + CLI 路径 + providers 列表）。
+- Cursor 品牌 logo（simple-icons）。
+- **Claude Code 本机模式**：`claudeCode.local.enabled` 开启后多一个 "CC 本机" 行——读本机
+  `~/.claude.json`，与远端 SSH 模式共用解析；CC 切到本机跑时不再需要 SSH。默认 best-effort
+  跑本地 `claude -p /usage` 刷新（找不到 CLI 就跳过）；`local.refreshUsage` 可单独关成纯被动
+  （代理只配在终端会话、launchd 无代理变量的环境）。**多账号接力**：`local.extraProfiles`
+  可挂更多本机 profile（如 et 的 `~/.claude-profiles/et/.claude.json`），每个一条被动行
+  （`CC <name>`，extras 恒不拉探针，与默认路径相同的条目自动去重）。设置页 CC 卡片新增开关。
+- **Kimi 凭据缺失/过期自动经 magpie 兜底**：本地 `~/.kimi-code` 凭据缺失或 token 过期时，
+  自动改查 `magpie quota kimi-code-cn --json`（magpie 自管凭据，不经 kimi CLI 用 Kimi——
+  其他设备/代理在跑——也能查到），行名保持 Kimi 不产生第二行；magpie 里也没有 kimi 账号时，
+  提示同时给出两条路径。无需把 kimi-code-cn 加入 `magpie.providers`（那是 magpie 独立行的开关）。
+
+### 修复
+
+- **CC 本机数据长期不更新**：探针子进程缺 `USER` 环境变量时，claude 取不到钥匙串里的订阅
+  凭据，静默退化成无订阅态输出且不写缓存；现在探针补齐 `USER`/`HOME` 并清掉继承的
+  `CLAUDE_CONFIG_DIR`。stdin 改接 `/dev/null`（CLI 否则空等 3s）。`extraProfiles[]` 支持
+  profile 级 `refreshUsage` + `claudePath`，用该号自己的二进制和 `CLAUDE_CONFIG_DIR` 探针
+  （出口按进程路径钉定的环境下不会走错链路）。CC 用量快照的 ⚠ 停更线从 24h 收紧到 1h。
+
+### 变更
+
+- **面板数字减负**：进度条不再在条尾重复标百分比（最大窗口的条尾值与右上角大号主值
+  恒等，非最大窗口看条长与颜色即可，精确值保留在 VoiceOver 标签）；标签列收窄、条体
+  加宽。每行数字从 ~5 组降到主值 + 重置/更新行。
+- **logo 上品牌色**：放弃 v2 的全灰单色模板渲染，改为模板位 + 品牌识别色着色——小米橙
+  #FF6900、Claude 赭 #D97757；纯黑白 mark（OpenAI/Kimi/Cursor/智谱）深浅模式自适应
+  近黑/近白。面板统一行与吸边条同规则。
+- 智谱 logo 更正为开放平台官方 "Z" 字标（自 z.ai 官方 logo.svg 提取字形，单 path 矢量）；
+  此前的点阵图案（lobehub zhipu 图标）并非现行品牌标。
+
 ## [2.0.0] - 2026-10-12
 
 产品级 v2：正确性底座 + SwiftPM 拆分 + 首屏信息层级 + 开源工程资产。规格见

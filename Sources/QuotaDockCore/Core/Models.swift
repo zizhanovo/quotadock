@@ -9,6 +9,7 @@ public enum SourceID: String, Hashable, CaseIterable {
     case kimi
     case mimo
     case claudeCode
+    case magpie
 
     public var defaultRefreshInterval: TimeInterval {
         switch self {

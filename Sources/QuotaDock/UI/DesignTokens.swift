@@ -43,12 +43,12 @@ func usageNSColor(_ used: Int) -> NSColor {
     return NSColor(red: 0.92, green: 0.26, blue: 0.22, alpha: 1)
 }
 
-// MARK: - 单行内联进度条："5h ▓▓▓░░ 23%"
+// MARK: - 单行内联进度条："5h ▓▓▓░░"（精确值不落在条尾：大号主值已是最大窗口，
+// 条尾再标一遍只会翻倍数字密度；窗口精确值看条长与颜色，读数走无障碍标签）
 
 struct MiniBar: View {
     let label: String
     let entry: LimitEntry?
-    let showRemaining: Bool
 
     private var used: Int { min(entry?.percentage ?? 0, 100) }
 
@@ -56,7 +56,8 @@ struct MiniBar: View {
         HStack(spacing: 5) {
             Text(label)
                 .font(.system(size: DT.Size.caption)).foregroundStyle(.secondary)
-                .frame(width: 16, alignment: .leading)
+                .lineLimit(1).minimumScaleFactor(0.8)
+                .frame(width: 34, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.13))
@@ -65,11 +66,6 @@ struct MiniBar: View {
                 }
             }
             .frame(height: DT.barHeight)
-            // 剩余/已用只改数字，颜色阈值不变（同一颜色不随模式反转语义）
-            Text(entry == nil ? "-" : "\(FreshnessPolicy.percent(forDisplay: used, showRemaining: showRemaining))%")
-                .font(.system(size: DT.Size.caption, weight: .semibold, design: .rounded))
-                .foregroundStyle(entry == nil ? Color.secondary : usageColor(used))
-                .frame(width: 30, alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) \(entry == nil ? "-" : "\(used)%")")

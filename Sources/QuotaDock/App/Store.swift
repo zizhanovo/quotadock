@@ -15,6 +15,8 @@ struct ExtraService: Identifiable {
     let usedPercent: Int?    // 主值：大号数字、状态色、排序
     var fiveBar: LimitEntry? = nil
     var weekBar: LimitEntry? = nil
+    var fiveLabel: String? = nil   // 进度条标签（magpie 下发窗口短名；nil=默认 5h/周）
+    var weeklyLabel: String? = nil
     let resetFallback: String    // 无重置窗口时的补充（重置日期 / credits）
     let observedAt: Date?
     var stale: Bool = false      // 数据停更超 24h，⚠ 标橙
@@ -127,7 +129,7 @@ final class Store: ObservableObject {
 
         coordinator = RefreshCoordinator(
             sources: sources ?? [ZhipuSource(skipList: skipList), CodexSource(), KimiSource(),
-                                 MiMoSource(), ClaudeCodeSource()],
+                                 MiMoSource(), ClaudeCodeSource(), MagpieSource()],
             configProvider: { config.currentSnapshot() },
             cache: cache,
             history: history,
@@ -168,7 +170,7 @@ final class Store: ObservableObject {
             switch outcome.identity.source {
             case .zhipu:
                 keys.append(Self.keyRow(for: outcome))
-            case .codex, .kimi, .mimo, .claudeCode:
+            case .codex, .kimi, .mimo, .claudeCode, .magpie:
                 services.append(Self.extraRow(for: outcome))
             }
         }
@@ -209,7 +211,7 @@ final class Store: ObservableObject {
         let outcomes = coordinator.outcomes
         var lines: [SourceLine] = []
         let names: [SourceID: String] = [.zhipu: "智谱", .codex: "Codex", .kimi: "Kimi",
-                                         .mimo: "MiMo", .claudeCode: "Claude Code"]
+                                         .mimo: "MiMo", .claudeCode: "Claude Code", .magpie: "Cursor"]
         for src in SourceID.allCases {
             let enabled = src == .zhipu ? true : (cfg[src.rawValue]?.bool("enabled", true) ?? true)
             let relevant = outcomes.values.filter { $0.identity.source == src }
@@ -273,6 +275,8 @@ final class Store: ObservableObject {
             usedPercent: snap?.primaryUsedPercent,
             fiveBar: snap?.fiveHour,
             weekBar: snap?.weekly,
+            fiveLabel: snap?.meta["fiveLabel"],
+            weeklyLabel: snap?.meta["weeklyLabel"],
             resetFallback: snap?.detail ?? "",
             observedAt: outcome.lastGoodAt,
             stale: snap?.stale ?? false,
@@ -312,6 +316,8 @@ final class Store: ObservableObject {
                 primary: s.usedPercent,
                 five: s.fiveBar,
                 weekly: s.weekBar,
+                fiveLabel: s.fiveLabel,
+                weeklyLabel: s.weeklyLabel,
                 singleLabel: (s.fiveBar == nil && s.weekBar == nil) ? L("已用", "used") : nil,
                 resetFallback: s.resetFallback,
                 observedAt: s.observedAt,

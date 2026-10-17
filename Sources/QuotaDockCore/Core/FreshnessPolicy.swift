@@ -20,6 +20,10 @@ public enum Freshness: Equatable {
 public struct FreshnessPolicy {
     public static let staleAfter: TimeInterval = 86400  // 24h
 
+    /// Claude Code 用量快照的停更线：缓存只在有人跑 /usage 或探针时才变，24h 才警告会让
+    /// 7 小时前的旧数字看起来像新的。
+    public static let usageSnapshotStaleAfter: TimeInterval = 3600
+
     public static func classify(lastGoodAt: Date?, now: Date = Date()) -> Freshness {
         guard let at = lastGoodAt else { return .noneYet }
         return now.timeIntervalSince(at) > staleAfter ? .stale(at) : .cached(at)

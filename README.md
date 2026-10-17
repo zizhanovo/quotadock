@@ -20,9 +20,9 @@
 |---|---|---|
 | 智谱 Coding Plan（多 key） | 5h 窗口% + 周额度% + 重置倒计时 | 官方监控接口，只读不耗额度；key 从 ZCode provider 配置自动发现，也可手工配置 |
 | Codex（ChatGPT OAuth） | 周窗口% + credits | 官方用量接口，直连/代理交替重试 |
-| Kimi | 5h 窗口% + 周% | 官方套餐接口（读本地 CLI 凭据） |
+| Kimi | 5h 窗口% + 周% | 官方套餐接口（读本地 CLI 凭据）；凭据缺失/过期自动经 magpie（kimi-code-cn）兜底 |
 | MiMo | 已用% + 剩余% + 重置日 + 套餐名 | **纯被动零探针**：本地助手 `mimo-usage-sync` 走小米 SSO 只读拉取后写缓存，QuotaDock 只读缓存文件 |
-| Claude Code（远程 VPS） | 5h% + 周% + 数据时间 | SSH 在**服务器上**跑 `claude -p /usage` 刷新后读缓存（凭据不出机、走 VPS 静态 IP）；`refreshUsage: false` 可退回纯被动 |
+| Claude Code（远程 VPS / 本机） | 5h% + 周% + 数据时间 | SSH 在**服务器上**跑 `claude -p /usage` 刷新后读缓存（凭据不出机、走 VPS 静态 IP）；`refreshUsage: false` 可退回纯被动。CC 跑在本机时开 `claudeCode.local.enabled`，读本机 `~/.claude.json` 免 SSH |
 
 每个服务都可以在配置里单独开关。
 
@@ -77,13 +77,16 @@ rm -rf <clone 目录>
 | `codex.proxyHost` / `proxyPort` | `127.0.0.1` / `6152` | 代理重试路（Clash/Surge 常见端口）；`proxyPort: 0` 禁用 |
 | `codex.retries` / `retryIntervalSeconds` | `4` / `15` | 直连/代理交替重试策略 |
 | `codex` / `kimi` / `mimo` `.refreshIntervalSeconds` | `180` | 各服务独立刷新间隔（节流，未到期跳过并保留旧数据） |
-| `kimi.enabled` / `credentialsPath` | `true` / `~/.kimi-code/...` | Kimi CLI 凭据（token 15 分钟过期，跑一次 `kimi` CLI 自动续期） |
+| `kimi.enabled` / `credentialsPath` | `true` / `~/.kimi-code/...` | Kimi CLI 凭据（token 15 分钟过期，跑一次 `kimi` CLI 自动续期）；本地凭据缺失/过期自动改查 magpie 的 kimi-code-cn 账号，无需额外配置 |
 | `mimo.enabled` / `cachePath` | `true` / `~/.cache/quotadock/mimo-usage.json` | 用量缓存（由 `./mimo-usage-sync` 写入；停更超 24h 标 ⚠） |
 | `claudeCode.servers` | `[]` | 远程服务器列表：`{"host": "ssh别名", "name": "显示名", "sshPort": "", "user": "", "paths": ["/home/claude/.claude.json"]}`；多路径取快照最新；host/user/paths 白名单校验 |
 | `claudeCode.sshConnectTimeout` | `10` | SSH 连接超时秒数（走跳板的两级握手约 5s） |
 | `claudeCode.refreshUsage` | `true` | 先在服务器跑 `claude -p /usage` 刷新缓存再读；`false` 纯被动 |
 | `claudeCode.refreshIntervalSeconds` | `600` | CC 服务器刷新间隔（快照只在有人用时才变，默认放宽到 10 分钟） |
 | `claudeCode.sshMultiplexing` | `true` | SSH 连接复用（ControlMaster，跳板场景握手开销归零） |
+| `claudeCode.local.enabled` / `path` | `false` / `~/.claude.json` | 本机 Claude Code：多一个 "CC 本机" 行，读本机 `~/.claude.json` 缓存；`claudePath` 可显式指定二进制 |
+| `claudeCode.local.refreshUsage` | 继承全局 `refreshUsage` | 本机是否主动跑 `claude -p /usage` 刷新。代理只配在终端会话时建议 `false`（launchd 无代理变量），纯被动读缓存——CC 2.1.x 起普通对话不写此缓存，数据只在你手动跑 /usage 时更新，停更超 24h 标 ⚠ |
+| `claudeCode.local.extraProfiles` | `[]` | 多账号接力：`[{"name": "et", "path": "~/.claude-profiles/et/.claude.json"}]`，每个 profile 一条被动行 `CC <name>`（不拉探针）；与默认路径相同的条目自动去重 |
 | `autoPing.enabled` / `command` | `false` | 个人套餐 5h 窗口自动敲活命令（见 `glm-ping.swift`） |
 
 凭据类文件（`auth.json`、`kimi-code.json`、SSH key）只在本机读取，QuotaDock 不向任何第三方发送。
@@ -95,9 +98,10 @@ rm -rf <clone 目录>
 | 智谱某 key 显示"凭据失效" | key 被服务端关闭（401/403 或 code:1000）。续费/换 key 后点**立即刷新**——强制刷新会重探失效名单，成功自动恢复 |
 | "暂时无法连接/接口限流/服务端错误" | 临时故障，保留了 HH:mm 的旧数据，稍后自动重试；持续出现查网络/代理 |
 | Codex 一直转不出数据 | chatgpt.com 出口被 Cloudflare 拦：配 `codex.proxyPort` 走代理重试路；token 过期跑一次 `codex` CLI |
-| Kimi 显示"token 过期" | token 仅 15 分钟有效且绑定设备会话：跑一次 `kimi` CLI 自动续期 |
+| Kimi 显示"token 过期" | token 仅 15 分钟有效且绑定设备会话：跑一次 `kimi` CLI 自动续期；若平时不经 CLI 用 Kimi，往 magpie 添加 kimi-code-cn 账号即可自动兜底查询 |
 | MiMo 一直"跑 mimo-usage-sync 同步额度" | 先手动跑 `./mimo-usage-sync`（本地只读 SSO 写缓存），再刷新 |
 | CC 显示"SSH 失败" | 查 `ssh <host>` 能否直连（BatchMode，需密钥登录）、跳板握手时间是否超过 `sshConnectTimeout` |
+| CC 本机行一直没数据 | 纯被动模式下先跑一次 Claude Code / 手动 `/usage` 让它写 `~/.claude.json` 缓存；主动刷新需本机有 `claude` CLI（不在常见位置时配 `claudeCode.local.claudePath`），且 launchd 无终端里的代理变量、直连不通时请保持 `local.refreshUsage: false` |
 | 改了配置没生效 | 热加载最多 5 秒 + 下一个刷新边界；日志（`/tmp/quotadock.out.log`）里有字段级修复提示 |
 | 面板不见了 | 可能被拖到屏幕外。删掉位置键后重启恢复右上角默认位：`defaults delete local.quotadock.app panelFrame`（老版本域名可能是 `local.quotadock`） |
 

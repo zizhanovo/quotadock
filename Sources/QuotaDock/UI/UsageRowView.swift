@@ -15,6 +15,8 @@ struct UsageRowData: Identifiable {
     let primary: Int?           // 主值：大号数字、状态色、排序依据
     let five: LimitEntry?
     let weekly: LimitEntry?
+    var fiveLabel: String? = nil    // 窗口名（magpie）；nil=默认 "5h"
+    var weeklyLabel: String? = nil  // 窗口名（magpie）；nil=默认 "周"
     let singleLabel: String?    // 无窗口服务（MiMo/Codex）的单条进度条标签
     let resetFallback: String   // 无重置窗口时的补充（重置日期 / credits）
     let observedAt: Date?
@@ -58,15 +60,14 @@ struct UnifiedUsageRow: View {
             if row.primary != nil {
                 // 2. 图表：5h / 周 双条，或单条（MiMo 已用 / Codex 周）
                 if let five = row.five {
-                    MiniBar(label: "5h", entry: five, showRemaining: showRemaining)
+                    MiniBar(label: row.fiveLabel ?? "5h", entry: five)
                 }
                 if let weekly = row.weekly {
-                    MiniBar(label: L("周", "wk"), entry: weekly, showRemaining: showRemaining)
+                    MiniBar(label: row.weeklyLabel ?? L("周", "wk"), entry: weekly)
                 }
                 if row.five == nil, row.weekly == nil, let label = row.singleLabel {
                     MiniBar(label: label,
-                            entry: LimitEntry(percentage: used),
-                            showRemaining: showRemaining)
+                            entry: LimitEntry(percentage: used))
                 }
                 // 3. 统一说明行：重置倒计时（或本轮异常提示）· 数据时间
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -94,7 +95,7 @@ struct UnifiedUsageRow: View {
     private var brandMark: some View {
         if let id = row.brand, let img = BrandLogo.logoImage(id) {
             Image(nsImage: img).resizable().renderingMode(.template)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BrandLogo.color(for: id))
                 .frame(width: 12, height: 12)
         } else {
             Circle().fill(usageColor(used)).frame(width: 6, height: 6)
@@ -104,8 +105,8 @@ struct UnifiedUsageRow: View {
 
     private var resetText: String {
         var parts: [String] = []
-        if let five = row.five { parts.append("5h " + shortCountdown(five.nextResetTime)) }
-        if let weekly = row.weekly { parts.append(L("周", "wk") + " " + shortCountdown(weekly.nextResetTime)) }
+        if let five = row.five { parts.append((row.fiveLabel ?? "5h") + " " + shortCountdown(five.nextResetTime)) }
+        if let weekly = row.weekly { parts.append((row.weeklyLabel ?? L("周", "wk")) + " " + shortCountdown(weekly.nextResetTime)) }
         if !parts.isEmpty { return L("重置 ", "reset ") + parts.joined(separator: " · ") }
         return row.resetFallback
     }

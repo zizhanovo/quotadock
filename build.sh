@@ -44,6 +44,11 @@ if [ "$1" = "--install" ]; then
     PLIST=~/Library/LaunchAgents/local.quotadock.plist
     sed "s#__BIN__#$PWD/$APP/Contents/MacOS/QuotaDock#" launchd.plist.template > "$PLIST"
     launchctl bootout gui/$(id -u)/local.quotadock 2>/dev/null || true
-    launchctl bootstrap gui/$(id -u) "$PLIST"
+    # bootout 后立刻 bootstrap 偶发 "Input/output error" 竞态，重试几次
+    for i in 1 2 3; do
+        sleep 1
+        if launchctl bootstrap gui/$(id -u) "$PLIST" 2>/dev/null; then break; fi
+        [ "$i" = 3 ] && launchctl bootstrap gui/$(id -u) "$PLIST"
+    done
     echo "installed launchd agent: local.quotadock（日志 /tmp/quotadock.out.log）"
 fi

@@ -117,7 +117,7 @@ public struct AppConfiguration {
             }
             out["thresholds"] = t
         }
-        for src in ["codex", "kimi", "mimo", "claudeCode"] {
+        for src in ["codex", "kimi", "mimo", "claudeCode", "magpie"] {
             if let sec = out[src] as? [String: Any],
                let ri = sec["refreshIntervalSeconds"] as? NSNumber, ri.intValue < 30 {
                 var s = sec

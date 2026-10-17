@@ -45,6 +45,11 @@ final class SettingsModel: ObservableObject {
     @Published var ccRefreshUsage: Bool
     @Published var ccTimeout: String
     @Published var ccServers: [CCServerDraft]
+    @Published var ccLocalEnabled: Bool  // 本机 Claude Code（读 ~/.claude.json，不走 SSH）
+    // Magpie（Cursor 等）
+    @Published var magpieEnabled: Bool
+    @Published var magpieBinPath: String   // "" = 常见安装位自动寻找
+    @Published var magpieProviders: String // 逗号分隔，如 "cursor, grok"
     // 全局
     @Published var language: String          // "zh" | "en"
     @Published var refreshInterval: Int
@@ -87,6 +92,12 @@ final class SettingsModel: ObservableObject {
                           sshPort: $0.str("sshPort", ""),
                           paths: $0.strList("paths").joined(separator: ", "))
         }
+        ccLocalEnabled = c["claudeCode"]?["local"]?.bool("enabled", false) ?? false
+        magpieEnabled = c["magpie"]?.bool("enabled", true) ?? true
+        magpieBinPath = c["magpie"]?.str("binPath", "") ?? ""
+        let plist = c["magpie"]?.strList("providers") ?? []
+        magpieProviders = (!plist.isEmpty ? plist : [c["magpie"]?.str("provider", "cursor") ?? "cursor"])
+            .joined(separator: ", ")
         language = c.language == "en" ? "en" : "zh"
         refreshInterval = Int(c.refreshInterval)
         let th = c.thresholds
@@ -130,7 +141,16 @@ final class SettingsModel: ObservableObject {
                             .map { $0.trimmingCharacters(in: .whitespaces) }
                             .filter { !$0.isEmpty }] as [String: Any]
                     },
+                "local": ["enabled": ccLocalEnabled],
             ] as [String: Any],
+            "magpie": [
+                "enabled": magpieEnabled,
+                "binPath": magpieBinPath,
+                "providers": magpieProviders
+                    .split(whereSeparator: { ", ".contains($0) })
+                    .map(String.init)
+                    .filter { !$0.isEmpty },
+            ],
         ]
         do {
             let base = ConfigWriter.readRaw(config.configPath) ?? [:]
@@ -170,6 +190,10 @@ final class SettingsModel: ObservableObject {
         ccRefreshUsage = fresh.ccRefreshUsage
         ccTimeout = fresh.ccTimeout
         ccServers = fresh.ccServers
+        ccLocalEnabled = fresh.ccLocalEnabled
+        magpieEnabled = fresh.magpieEnabled
+        magpieBinPath = fresh.magpieBinPath
+        magpieProviders = fresh.magpieProviders
         language = fresh.language
         refreshInterval = fresh.refreshInterval
         yellow = fresh.yellow

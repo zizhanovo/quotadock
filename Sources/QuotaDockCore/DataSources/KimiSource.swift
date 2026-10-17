@@ -2,11 +2,17 @@ import Foundation
 
 // MARK: - Kimi 套餐数据源
 
-/// GET /coding/v1/usages（复数 usages）：5 小时窗口 + 周额度。
+/// 首选 GET /coding/v1/usages（复数 usages）：5 小时窗口 + 周额度。
 /// access_token 仅 15 分钟有效且无法本地静默续期（refresh 绑定原始设备会话）——
 /// token 过期归为凭据过期（可恢复，保留最近成功值），不是确认失效，不写 skip。
+/// 凭据缺失/过期时自动走 magpie 兜底（`magpie quota kimi-code-cn --json`）：
+/// magpie 自管凭据，不经 kimi CLI 用 Kimi（其他设备/代理在跑）也能查到；
+/// 复用 kimi:default 身份，行名保持 Kimi，不产生第二行。
 public struct KimiSource: QuotaSource {
     public let id = SourceID.kimi
+
+    /// magpie 里 Kimi 个人套餐账号的 provider 名
+    static let magpieProvider = "kimi-code-cn"
 
     public init() {}
 
@@ -15,6 +21,18 @@ public struct KimiSource: QuotaSource {
     }
 
     public func fetch(configuration: SourceConfiguration, cancellation: CancellationToken) async -> SourceResult {
+        let native = await fetchNative(configuration: configuration, cancellation: cancellation)
+        switch native.status {
+        case .noDataYet, .credentialStale:
+            // 本地凭据缺失/过期 → magpie 兜底（用户可能根本不经 kimi CLI 用 Kimi）
+            return await fetchViaMagpie(native: native, configuration: configuration,
+                                        cancellation: cancellation)
+        default:
+            return native
+        }
+    }
+
+    private func fetchNative(configuration: SourceConfiguration, cancellation: CancellationToken) async -> SourceResult {
         let identity = configuration.identity
         let credPath = configuration.app["kimi"]?.path("credentialsPath", "~/.kimi-code/credentials/kimi-code.json") ?? ""
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: credPath)),
@@ -51,6 +69,52 @@ public struct KimiSource: QuotaSource {
         }
         return Self.parse(body: body ?? Data(), identity: identity, tokenFresh: fresh)
     }
+
+    /// magpie 兜底：找不到 CLI 或 magpie 自身失败时保留原生结果（兜底不该掩盖原生报错）
+    private func fetchViaMagpie(native: SourceResult, configuration: SourceConfiguration,
+                                cancellation: CancellationToken) async -> SourceResult {
+        let identity = configuration.identity
+        guard let bin = MagpieSource.resolveBin(configuration.app) else {
+            Log.warn("kimi 兜底失败：未找到 magpie CLI")
+            return native
+        }
+        let run = await Subprocess.run(bin: bin, args: ["quota", Self.magpieProvider, "--json"],
+                                       timeout: configuration.timeout)
+        if cancellation.isCancelled {
+            return SourceResult(identity: identity, snapshot: nil, status: .networkError("cancelled"))
+        }
+        guard run.code == 0 else {
+            Log.warn("kimi 兜底失败：\(run.timedOut ? "magpie 查询超时" : "magpie 退出码 \(run.code)")")
+            return native
+        }
+        // 严格按 provider 匹配：magpie 里没有 kimi 账号时不能拿别的账号数据顶数
+        let fallback = MagpieSource.parse(data: Data(run.out.utf8), provider: Self.magpieProvider,
+                                          identity: identity, fallbackToFirst: false)
+        return Self.merged(native: native, fallback: fallback, identity: identity)
+    }
+
+    /// 兜底合并（纯函数可测）：magpie 拿到数据直接用；magpie 里也没有 kimi 账号时
+    /// 在原生提示后补一条 magpie 路径（"跑一次 kimi CLI"对不经 CLI 用 Kimi 的用户不是解）；
+    /// magpie 执行失败则原样保留原生结果。
+    static func merged(native: SourceResult, fallback: SourceResult, identity: SourceIdentity) -> SourceResult {
+        if fallback.status == .success { return fallback }
+        if case .noDataYet = fallback.status {
+            switch native.status {
+            case .noDataYet(let hint):
+                return SourceResult(identity: identity, snapshot: nil,
+                                    status: .noDataYet(hint: hint + Self.magpieHint))
+            case .credentialStale(let hint):
+                return SourceResult(identity: identity, snapshot: nil,
+                                    status: .credentialStale(hint: hint + Self.magpieHint))
+            default:
+                break
+            }
+        }
+        return native
+    }
+
+    private static let magpieHint = L("；或在 magpie 里配置 kimi-code-cn 账号",
+                                      "; or add a kimi-code-cn account in magpie")
 
     static func parse(body: Data, identity: SourceIdentity, tokenFresh: Bool) -> SourceResult {
         guard let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
