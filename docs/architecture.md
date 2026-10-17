@@ -14,13 +14,13 @@ Sources/QuotaDockCore/        ← 可测核心（库）
   Core/         Models · QuotaSource 协议 · RefreshCoordinator · 错误分类 · 解析 · 新鲜度
   Configuration/  ConfigurationStore（schema 校验 + 热加载）
   Persistence/    CacheStore（版本化快照缓存） · SkipListStore（失效身份名单）
-  DataSources/    Zhipu · Codex · Kimi · MiMo · ClaudeCode
-  Support/        ShellSafety · LocalizedCopy · TimeFormatting · Logger
+  DataSources/    Zhipu · Codex · Kimi · MiMo · ClaudeCode · Magpie
+  Support/        ShellSafety · Subprocess · LocalizedCopy · TimeFormatting · Logger
 Sources/QuotaDock/           ← App（可执行）
   App/          Store（UI 适配层） · AppDelegate · WindowDrag
   UI/           DashboardView · SummaryView · SourceRowView · EdgeStripView · SettingsView · DesignTokens
   main.swift    入口（含 QUOTADOCK_RENDER 离屏渲染模式） · Version.swift
-Tests/QuotaDockTests/         ← 52 项单元测试
+Tests/QuotaDockTests/         ← 89 项单元测试
 ```
 
 ## 数据流

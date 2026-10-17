@@ -6,11 +6,10 @@
 
 ## 30 秒理解
 
-- 面板顶部是**摘要卡**：当前最紧张的服务 + 大号百分比 + 最近重置倒计时 + 数据时间
-- 下面是服务列表：智谱各 key 的 5h/周双进度条、Codex/Kimi/MiMo/Claude Code 用量行，全部按紧张度降序
+- 面板是一张服务列表，**按紧张度降序**：智谱各 key 的 5h/周双进度条、Codex/Kimi/MiMo/Claude Code/Cursor 等用量行，每行带重置倒计时与数据时间
 - 点面板头部的**齿轮按钮**打开设置窗口：连接来源（路径/开关/服务器/手工 key）→ 验证（配置校验 + 单源立即抓取）→ 显示偏好（语言/阈值/剩余%/自动切换/勾选/退出），保存即写回 config.json 并热生效（保留你手写的未知字段）
 - 面板头部：**⌄ 收起**（回吸边条）、**📈 大屏仪表盘**（环形仪表 + 7 天用量趋势 + 重置时间轴，趋势数据本地积累）、**⚙ 设置**、**↻ 立即刷新**——不再有悬停弹层
-- **默认收纳为吸边细条**：贴在你上次放的边和位置；**悬停 0.35s 自动展开**预览，鼠标离开 2.5 秒后自动收回去；**点击细条=固定展开**（不自动收），拖动面板或打开设置同样视为固定；"收起"按钮随时手动收。展开面板锚定在细条原位出现，收起回到最近的边——不乱跳
+- **默认收纳为吸边细条**：贴在你上次放的边和位置；**悬停 0.35s 自动展开**预览，鼠标离开 2.5 秒后自动收回去；展开后无论点击与否都会自动收回；"收起"按钮随时手动收。展开面板锚定在细条原位出现，收起回到最近的边——不乱跳
 - 收纳态每项「彩色百分比 + 品牌 logo」，靠哪条屏边近就吸哪条，左右竖条、上下横条；同 logo 多实例自动加 ①② 角标；拖到别的边换向
 - 临时故障（断网/限流/服务端 5xx）**保留最近成功值**并标注数据时间，绝不清空；只有服务端明确拒绝凭据才标记失效
 
@@ -31,8 +30,9 @@
 QuotaDock 是**本地只读仪表盘**，没有账号系统、没有云端、没有遥测：
 
 - **读取本地凭据文件**（只读，不出机器）：智谱 `~/.zcode/v2/`、Codex `~/.codex/auth.json`、Kimi `~/.kimi-code/`；key 只在内存中使用，不写日志、不进缓存文件
-- **发起网络请求**的只有三个接口：智谱/ Codex / Kimi 的官方只读用量接口（凭证只发给对应官方域名）
-- **不发请求**：MiMo（读本地缓存）、Claude Code（SSH 到你自己的服务器读文件；VPS 凭据不拷回本机）
+- **QuotaDock 自己发起网络请求**的只有三个接口：智谱/ Codex / Kimi 的官方只读用量接口（凭证只发给对应官方域名）
+- **子进程**（可选）：`magpie quota …`（Cursor/Grok 等，凭据由 magpie 自管）与本机 `claude -p /usage`（刷新 Claude Code 用量缓存）；均为 argv 直传、不经 shell，QuotaDock 不接触其凭据
+- **不发请求**：MiMo（读本地缓存）、Claude Code 远端（SSH 到你自己的服务器读文件；VPS 凭据不拷回本机）
 - SSH 远端命令的 host/user/路径经过白名单校验，配置里的注入形态会被直接拒绝并列出修复提示
 - 缓存文件（`~/.cache/quotadock/`）按构造只含用量数字，不含任何 token/key；用量历史（`history.json`，7 天保留）同样只有百分比采样点
 
@@ -41,7 +41,7 @@ QuotaDock 是**本地只读仪表盘**，没有账号系统、没有云端、没
 需要 macOS 13+ 和 Xcode Command Line Tools（`xcode-select --install`）。
 
 ```bash
-git clone <repo> && cd quotadock
+git clone https://github.com/zizhanovo/quotadock.git && cd quotadock
 ./build.sh --install     # 编译 + 组装 app bundle + launchd 开机自启
 ```
 
@@ -129,7 +129,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.quotadock.mimo-syn
 ## 开发
 
 ```bash
-swift build && swift test   # 单元测试（52 项）
+swift build && swift test   # 单元测试（89 项）
 ./build.sh                  # release bundle（版本化 Info.plist）
 # 离屏渲染 UI 效果图（不弹窗，内置 mock 数据）——改 UI 必跑
 QUOTADOCK_RENDER=1 QUOTADOCK_LOGOS=$PWD/logos .build/debug/QuotaDock
